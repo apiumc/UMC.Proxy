@@ -1,0 +1,10 @@
+﻿<script>
+    window.top.postMessage(JSON.stringify({
+        type: 'msg',
+        value: '设置多账户成功，现在你可以打开了'
+    }), "*");
+    window.top.postMessage(JSON.stringify({
+        type: 'close',
+        value: 'close'
+    }), "*");
+</script>

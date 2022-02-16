@@ -1,0 +1,76 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Entities\Topic.cs" />
+    <Compile Remove="HttpProxy222.cs" />
+    <Compile Remove="SQLite.cs" />
+    <Compile Remove="XHER.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="Resources\Auth\dingtalk.html" />
+    <None Remove="Resources\Auth\nosupport.html" />
+    <None Remove="Resources\Auth\wxwork.html" />
+    <None Remove="Resources\close.html" />
+    <None Remove="Resources\dingtalk.html" />
+    <None Remove="Resources\fields.html" />
+    <None Remove="Resources\login.html" />
+    <None Remove="Resources\pc.html" />
+    <None Remove="Resources\safe.html" />
+    <None Remove="Resources\wx.html" />
+    <None Remove="Resources\wxwork.html" />
+    <None Remove="Resources\fields %28副本%29.html" />
+    <None Remove="Resources\user %28副本%29.html" />
+    <None Remove="Resources\login %28副本%29.html" />
+    <None Remove="Resources\login-html %28副本%29.html" />
+    <None Remove="Resources\close %28副本%29.html" />
+    <None Remove="Resources\check %28副本%29.html" />
+    <None Remove="Resources\desktop %28副本%29.html" />
+    <None Remove="Resources\desktop %28副本%29.bg.html" />
+    <None Remove="Resources\desktop.bg.html" />
+    <None Remove="Resources\desktop %28副本%29.umc.html" />
+    <None Remove="Resources\favicon.ico" />
+    <None Remove="Resources\favicon.ico" />
+    <None Remove="Resources\pc %28副本%29.html" />
+    <None Remove="Resources\desktop.doc.html" />
+    <None Remove="Resources\Auth\dingtalk %28副本%29.html" />
+    <None Remove="Resources\pwd-Compel.html" />
+    <None Remove="Resources\pwd-Select.html" />
+    <None Remove="Resources\pwd-Selected.html" />
+    <None Remove="Resources\umc.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\Auth\dingtalk.html" />
+    <EmbeddedResource Include="Resources\Auth\nosupport.html" />
+    <EmbeddedResource Include="Resources\Auth\wxwork.html" />
+    <EmbeddedResource Include="Resources\dingtalk.html" />
+    <EmbeddedResource Include="Resources\user.html" />
+    <EmbeddedResource Include="Resources\login.html" />
+    <EmbeddedResource Include="Resources\pc.html" />
+    <EmbeddedResource Include="Resources\close.html" />
+    <EmbeddedResource Include="Resources\error.html" />
+    <EmbeddedResource Include="Resources\weixin.html" />
+    <EmbeddedResource Include="Resources\wxwork.html" />
+    <EmbeddedResource Include="Resources\login-html.html" />
+    <EmbeddedResource Include="Resources\login-new.html" />
+    <EmbeddedResource Include="Resources\check.html" />
+    <EmbeddedResource Include="Resources\desktop.umc.html" />
+    <EmbeddedResource Include="Resources\desktop.html" />
+    <EmbeddedResource Include="Resources\desktop.page.html" />
+    <EmbeddedResource Include="Resources\favicon.ico" />
+    <EmbeddedResource Include="Resources\desktop.doc.html" />
+    <EmbeddedResource Include="Resources\pwd-Compel.html" />
+    <EmbeddedResource Include="Resources\pwd-Select.html" />
+    <EmbeddedResource Include="Resources\pwd-Selected.html" />
+    <EmbeddedResource Include="Resources\umc.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UMC.Data\UMC.Data.csproj" />
+  </ItemGroup>
+</Project>

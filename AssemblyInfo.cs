@@ -1,0 +1,1 @@
+﻿[assembly: UMC.Web.Mapping]
