@@ -20,9 +20,9 @@ namespace UMC.Proxy.Activities
 
         public override void ProcessActivity(WebRequest request, WebResponse response)
         {
-            var seesionKey = Utility.MD5(UMC.Security.AccessToken.Token.Value);
+            var seesionKey = Utility.MD5(this.Context.Token.Id.Value);
 
-            var sesion = UMC.Data.DataFactory.Instance().Session(UMC.Security.AccessToken.Token.ToString());
+            var sesion = UMC.Data.DataFactory.Instance().Session(this.Context.Token.Id.ToString());
 
             if (sesion != null)
             {

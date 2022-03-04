@@ -237,7 +237,7 @@ namespace UMC.Proxy.Activities
         }
         void LogoutPath(Site site)
         {
-            var sValue = Web.UIDialog.AsyncDialog("LogoutPath", g =>
+            var sValue = UIDialog.AsyncDialog(this.Context, "LogoutPath", g =>
             {
                 var from2 = new UIFormDialog() { Title = "触发登录页面" };
                 from2.AddTextarea("触发登录页面", "LogoutPath", site.LogoutPath as string).Put("Rows", 5);
@@ -347,7 +347,7 @@ namespace UMC.Proxy.Activities
                 .Put("开启日志", "IsDebug", site.IsDebug == true);
 
 
-                from.AddRadio("图标打开方式", "OpenModel")
+                from.AddRadio("打开方式", "OpenModel")
                 .Put("新窗口", "0", (site.OpenModel ?? 0) == 0)
                 .Put("当前窗口", "1", site.OpenModel == 1)
                 .Put("最大化窗口", "2", site.OpenModel == 2)
@@ -809,7 +809,7 @@ namespace UMC.Proxy.Activities
                 ui.NewSection().AddCell("负载网址", (site.Domain.IndexOf(',') > 0 || site.Domain.IndexOf('\n') > 0) ? "多例均衡" : site.Domain, new UIClick(new WebMeta(request.Arguments).Put(g, "Domain")).Send(request.Model, request.Command))
 
                 .AddCell("请求配置", String.IsNullOrEmpty(site.HeaderConf) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "HeaderConf")).Send(request.Model, request.Command))
-                .NewSection() .AddCell("时效参数", String.Format("{0}s:{1}m", site.Timeout ?? 100, site.AuthExpire ?? 30), new UIClick(new WebMeta(request.Arguments).Put(g, "Timeout")).Send(request.Model, request.Command))
+                .NewSection().AddCell("时效参数", String.Format("{0}s:{1}m", site.Timeout ?? 100, site.AuthExpire ?? 30), new UIClick(new WebMeta(request.Arguments).Put(g, "Timeout")).Send(request.Model, request.Command))
 
                 .AddCell("应用管理员", String.IsNullOrEmpty(site.AdminConf) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "AdminConf")).Send(request.Model, request.Command));
 
@@ -937,7 +937,7 @@ namespace UMC.Proxy.Activities
 
             if (request.IsMaster == false)
             {
-                var userName = UMC.Data.Utility.GetUsername();
+                var userName = Context.Token.Username;// UMC.Data.Utility.GetUsername();
                 if (SiteConfig.Config(site.AdminConf).Any(r => r == userName) == false)
                 {
                     this.Prompt("配置应用的需要应用管理员权限");
@@ -1065,14 +1065,14 @@ namespace UMC.Proxy.Activities
 
         private void Host(Site site)
         {
-            var host = UIDialog.AsyncDialog("Setting", g =>
-           {
-               var from = new Web.UIFormDialog() { Title = "绑定域名" };
-               from.AddText("域名", "Setting", String.Empty);
-               //from.AddText("应用", "Value", String.Empty);
-               from.Submit("确认", this.Context.Request, "Site.Config");
-               return from;
-           });
+            var host = UIDialog.AsyncDialog(this.Context, "Setting", g =>
+            {
+                var from = new Web.UIFormDialog() { Title = "绑定域名" };
+                from.AddText("域名", "Setting", String.Empty);
+                //from.AddText("应用", "Value", String.Empty);
+                from.Submit("确认", this.Context.Request, "Site.Config");
+                return from;
+            });
             if (System.Text.RegularExpressions.Regex.IsMatch(host, @"^([a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z0-9]{1,6}$") == false)
             {
                 this.Prompt("域名格式不正确");

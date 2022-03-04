@@ -66,7 +66,7 @@ namespace UMC.Proxy.Activities
                 caption = caption.Substring(0, vindex);
             }
             data.Put("caption", $"{caption}的使用情况");
-            var Users = this.AsyncDialog("User", g => this.DialogValue(UMC.Data.Utility.GetUsername())).Split(',');
+            var Users = this.AsyncDialog("User", g => this.DialogValue(this.Context.Token.Username)).Split(',');
 
             var webDate = new WebMeta();
             data.Put("data", webDate);

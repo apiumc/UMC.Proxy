@@ -84,7 +84,7 @@ namespace UMC.Proxy.Activities
         public override void ProcessActivity(WebRequest request, WebResponse response)
         {
             var status = UMC.Data.Utility.IntParse(this.AsyncDialog("status", "200"), 200);
-            var user = UMC.Security.Identity.Current;
+            var user = this.Context.Token.Identity(); //UMC.Security.Identity.Current;
             var siteKey = this.AsyncDialog("site", "SELF");
 
             var date = Convert.ToDateTime(this.AsyncDialog("date", d =>

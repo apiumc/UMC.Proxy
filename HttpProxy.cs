@@ -16,46 +16,46 @@ namespace UMC.Proxy
 {
     public class HttpProxy
     {
-        class LogWriter : System.IO.TextWriter
-        {
-            public LogWriter(String filename)
-            {
-                this.file = filename;
-            }
-            String file;
-            System.IO.TextWriter writer;
-            public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
-            public override void Write(char value)
-            {
-                if (writer == null)
-                {
-                    if (String.IsNullOrEmpty(file) == false)
-                    {
-                        if (!System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(file)))
-                        {
-                            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file));
-                        }
-                        FileStream stream = new FileStream(file, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+        //class LogWriter : System.IO.TextWriter
+        //{
+        //    public LogWriter(String filename)
+        //    {
+        //        this.file = filename;
+        //    }
+        //    String file;
+        //    System.IO.TextWriter writer;
+        //    public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+        //    public override void Write(char value)
+        //    {
+        //        if (writer == null)
+        //        {
+        //            if (String.IsNullOrEmpty(file) == false)
+        //            {
+        //                if (!System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(file)))
+        //                {
+        //                    System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file));
+        //                }
+        //                FileStream stream = new FileStream(file, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
 
-                        writer = new System.IO.StreamWriter(stream);
+        //                writer = new System.IO.StreamWriter(stream);
 
-                    }
-                }
-                if (writer != null)
-                {
-                    writer.Write(value);
-                }
-            }
+        //            }
+        //        }
+        //        if (writer != null)
+        //        {
+        //            writer.Write(value);
+        //        }
+        //    }
 
-            public override void Close()
-            {
-                base.Close();
-                if (writer != null)
-                {
-                    writer.Close();
-                }
-            }
-        }
+        //    public override void Close()
+        //    {
+        //        base.Close();
+        //        if (writer != null)
+        //        {
+        //            writer.Close();
+        //        }
+        //    }
+        //}
         public Uri Domain
         {
             get;
@@ -78,7 +78,7 @@ namespace UMC.Proxy
             get;
             private set;
         }
-        public System.IO.TextWriter Loger
+        public System.IO.StringWriter Loger
         {
 
             get;
@@ -130,20 +130,30 @@ namespace UMC.Proxy
         }
         void SetCookie(Cookie cookie)
         {
-            foreach (var name in this.OutputCookies)
+            if (this.Site.Site.AuthType > WebAuthType.All)
             {
-                if (String.Equals(cookie.Name, name))
+                if (String.IsNullOrEmpty(cookie.Path))
                 {
-                    if (String.Equals(this.Context.Cookies[name], cookie.Value) == false)
-                    {
-                        this.Context.AppendCookie(name, cookie.Value, cookie.Path);
-
-                    }
+                    this.Context.AddHeader("Set-Cookie", $"{cookie.Name}={cookie.Value}");
                 }
-                else if (String.Equals("*", name))
+                else
                 {
-                    this.Context.AppendCookie(cookie.Name, cookie.Value, cookie.Path);
-                    break;
+                    foreach (var name in this.OutputCookies)
+                    {
+                        if (String.Equals(cookie.Name, name))
+                        {
+                            if (String.Equals(this.Context.Cookies[name], cookie.Value) == false)
+                            {
+                                this.Context.AppendCookie(name, cookie.Value, cookie.Path);
+
+                            }
+                        }
+                        else if (String.Equals("*", name))
+                        {
+                            this.Context.AppendCookie(cookie.Name, cookie.Value, cookie.Path);
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -176,7 +186,7 @@ namespace UMC.Proxy
                             value = Math.Abs(UMC.Data.Utility.IntParse(UMC.Data.Utility.Guid(context.UserHostAddress, true).Value)) % site.WeightTotal;
                             break;
                         case 2:
-                            var tk = UMC.Security.AccessToken.Token;
+                            var tk = context.Token.Id;
                             if (tk.HasValue)
                             {
                                 value = Math.Abs(UMC.Data.Utility.IntParse(tk.Value)) % site.WeightTotal;
@@ -219,9 +229,10 @@ namespace UMC.Proxy
             this.Site = site;
             this.IsDebug = site.Site.IsDebug == true;
 
-            this.Loger = new LogWriter(String.Empty);
+            this.Loger = new StringWriter();
 
             this.Context = context;
+            this.User = context.Token.Identity();
 
             this.WebResource = $"/__CDN/{this.Site.Root}";
 
@@ -258,70 +269,69 @@ namespace UMC.Proxy
             if (StaticModel != 0)
             {
 
-                var user = UMC.Security.Identity.Current;
-                if (this.IsDebug && user.IsAuthenticated)
-                {
-                    this.Loger = new LogWriter(UMC.Data.Reflection.ConfigPath(String.Format("Static\\log\\{0}\\{1}.log", Site.Root, user.Name)));
-                }
+                //var user = context.Token.Identity(); // UMC.Security.Identity.Current;
 
                 var deviceIndex = UMC.Data.Utility.IntParse(context.Cookies[DeviceIndex], 0);
 
 
-                bool isNew = false;
-                if (context.RawUrl.StartsWith("/?$=") || context.RawUrl.StartsWith("/?%24="))
+                if (this.Site.Site.AuthType > WebAuthType.All)
                 {
-                    isNew = String.Equals("New", context.QueryString.Get("$"));
-                    if (isNew == false)
+                    bool isNew = false;
+                    if (context.RawUrl.StartsWith("/?$=") || context.RawUrl.StartsWith("/?%24="))
                     {
-                        if (context.UrlReferrer != null)
+                        isNew = String.Equals("New", context.QueryString.Get("$"));
+                        if (isNew == false)
                         {
-                            isNew = String.Equals(context.UrlReferrer.PathAndQuery, "/?$=New") || String.Equals(context.UrlReferrer.PathAndQuery, "/?%24=New");
+                            if (context.UrlReferrer != null)
+                            {
+                                isNew = String.Equals(context.UrlReferrer.PathAndQuery, "/?$=New") || String.Equals(context.UrlReferrer.PathAndQuery, "/?%24=New");
+                            }
                         }
                     }
-                }
-                if (isNew)
-                {
-                    var scookies = DataFactory.Instance().Cookies(this.Site.Root, user.Id.Value).OrderBy(r => r.IndexValue).ToList();
-
-                    foreach (var sc in scookies)
+                    if (isNew)
                     {
-                        if (String.IsNullOrEmpty(sc.Account))
-                        {
-                            this.SiteCookie = sc;
+                        var scookies = DataFactory.Instance().Cookies(this.Site.Root, User.Id.Value).OrderBy(r => r.IndexValue).ToList();
 
-                            break;
+                        foreach (var sc in scookies)
+                        {
+                            if (String.IsNullOrEmpty(sc.Account))
+                            {
+                                this.SiteCookie = sc;
+
+                                break;
+                            }
                         }
                     }
-                }
-                if (this.SiteCookie == null && user.IsAuthenticated)
-                {
-                    if (site.Site.UserModel == Entities.UserModel.Bridge && deviceIndex == 0)
+                    if (this.SiteCookie == null && User.IsAuthenticated)
                     {
-                        this.SiteCookie = new Entities.Cookie { Domain = Site.Root, user_id = user.Id.Value, IndexValue = 0 };
+                        if (site.Site.UserModel == Entities.UserModel.Bridge && deviceIndex == 0)
+                        {
+                            this.SiteCookie = new Entities.Cookie { Domain = Site.Root, user_id = User.Id.Value, IndexValue = 0 };
+                        }
+                        else
+                        {
+                            this.SiteCookie = DataFactory.Instance().Cookie(this.Site.Root, User.Id.Value, deviceIndex);
+                        }
+                        if (this.SiteCookie == null && deviceIndex != 0)
+                        {
+                            this.SiteCookie = DataFactory.Instance().Cookie(this.Site.Root, User.Id.Value, 0);
+
+                        }
                     }
-                    else
+                    if (this.SiteCookie == null)
                     {
-                        this.SiteCookie = DataFactory.Instance().Cookie(this.Site.Root, user.Id.Value, deviceIndex);
-                    }
-                    if (this.SiteCookie == null && deviceIndex != 0)
-                    {
-                        this.SiteCookie = DataFactory.Instance().Cookie(this.Site.Root, user.Id.Value, 0);
+                        this.SiteCookie = new Entities.Cookie { Domain = Site.Root, user_id = User.Id.Value, IndexValue = 0 };
 
                     }
                 }
 
-                if (this.SiteCookie == null)
-                {
-                    this.SiteCookie = new Entities.Cookie { Domain = Site.Root, user_id = user.Id.Value, IndexValue = 0 };
-
-                }
                 this.Domain = WeightUri(site, context);
-                if (site.Test.Count > 0 && user.IsAuthenticated)
+                if (site.Test.Count > 0 && User.IsAuthenticated)
                 {
                     var me = site.Test.GetEnumerator();
                     while (me.MoveNext())
                     {
-                        if (me.Current.Value.Any(r => String.Equals(r, user.Name, StringComparison.CurrentCultureIgnoreCase))) //.Contains(user.Name))
+                        if (me.Current.Value.Any(r => String.Equals(r, User.Name, StringComparison.CurrentCultureIgnoreCase))) //.Contains(user.Name))
                         {
                             this.Domain = new Uri(me.Current.Key);
 
@@ -337,8 +347,6 @@ namespace UMC.Proxy
                     var cookies = UMC.Data.JSON.Deserialize<WebMeta[]>(this.SiteCookie.Cookies);
                     if (cookies != null)
                     {
-                        _Cookies.AddRange(cookies);
-
 
                         var cs = new List<String>();
 
@@ -373,18 +381,27 @@ namespace UMC.Proxy
                             checkClients.Add(name);
                             this.Cookies.Add(cookie);
                         }
-
-                        foreach (var k in cs)
+                        if (cs.Contains("*"))
                         {
-                            var cvalue = this.Context.Cookies[k];
-                            if (String.IsNullOrEmpty(cvalue) == false)
-                            {
-                                this.Cookies.Add(new System.Net.Cookie(k, cvalue, "/", this.Domain.Host));
-                            }
-
+                            this.InitClientCookie(checkClients);
                         }
-                        this.InitClientCookie(checkClients);
+                        else
+                        {
+                            foreach (var k in cs)
+                            {
+                                var cvalue = this.Context.Cookies[k];
+                                if (String.IsNullOrEmpty(cvalue) == false)
+                                {
+                                    this.Cookies.Add(new System.Net.Cookie(k, cvalue, "/", this.Domain.Host));
+                                }
+                            }
+                        }
                     }
+                }
+                else if (site.Site.AuthType == WebAuthType.All)
+                {
+
+                    InitClientCookie(new List<string>());
                 }
 
             }
@@ -432,7 +449,7 @@ namespace UMC.Proxy
 
             if (this.SiteCookie == null)
             {
-                this.SiteCookie = new Entities.Cookie { Domain = Site.Root, user_id = UMC.Security.Identity.Current.Id.Value, IndexValue = 0 };
+                this.SiteCookie = new Entities.Cookie { Domain = Site.Root, user_id = context.Token.UId.Value, IndexValue = 0 };
 
             }
         }
@@ -601,7 +618,7 @@ namespace UMC.Proxy
         }
         bool CookieAccountSelectHtml()
         {
-            var user = UMC.Security.Identity.Current;
+            var user = this.Context.Token.Identity(); // UMC.Security.Identity.Current;
 
             var scookies = DataFactory.Instance().Cookies(this.Site.Root, user.Id.Value).Where(r => String.IsNullOrEmpty(r.Account) == false).OrderBy(r => r.IndexValue).ToList();
             if (scookies.Count > 1)
@@ -674,7 +691,7 @@ namespace UMC.Proxy
                                 using (System.IO.Stream stream2 = typeof(HttpProxy).Assembly
                                                    .GetManifestResourceStream("UMC.Proxy.Resources.user.html"))
                                 {
-                                    Str = new System.IO.StreamReader(stream2).ReadToEnd().Replace("{name}", this.SiteCookie.Account ?? UMC.Data.Utility.GetUsername());
+                                    Str = new System.IO.StreamReader(stream2).ReadToEnd().Replace("{name}", this.SiteCookie.Account ?? this.Context.Token.Username);
                                 }
                                 if (this.SiteCookie.IndexValue > 0)
                                 {
@@ -760,7 +777,7 @@ namespace UMC.Proxy
         WebMeta[] FieldHtml(bool isUser)
         {
             var login = GetConf(String.Format("SITE_MIME_{0}_LOGIN", Site.Root).ToUpper());
-            var user = UMC.Security.Identity.Current;
+            var user = this.Context.Token.Identity(); //UMC.Security.Identity.Current;
 
             var hash = new Hashtable();
 
@@ -1410,7 +1427,7 @@ namespace UMC.Proxy
 
                     var newPass = UMC.Data.Utility.Guid(Guid.NewGuid());
 
-                    config["Account"] = UMC.Security.Identity.Current.Name;
+                    config["Account"] = this.Context.Token.Username;// UMC.Security.Identity.Current.Name;
                     if (proxy.IsDebug == true)
                         proxy.Loger.WriteLine("检测账户密码:");
                     if (proxy.XHR(checkConfig, htmlConfig, 0, config, writer, "CHECK", false, newPass))
@@ -2324,7 +2341,7 @@ namespace UMC.Proxy
 
 
 
-            var user = UMC.Security.Identity.Current;
+            var user = this.Context.Token.Identity();
 
             if (this.Site.Site.UserModel == Entities.UserModel.Quote)
             {
@@ -2575,7 +2592,7 @@ namespace UMC.Proxy
 
                             case Entities.UserModel.Quote:
                                 var currentTime = UMC.Data.Utility.TimeSpan();
-                                var q = UMC.Data.Utility.IntParse(UMC.Security.AccessToken.Current.Data["DeviceQuote"] as string, 0);
+                                var q = UMC.Data.Utility.IntParse(this.Context.Token.Data["DeviceQuote"] as string, 0);
                                 if (q + 10 > currentTime)
                                 {
                                     WebServlet.Error(this.Context, "登录异常", String.Format("{0}是引用账户，多次尝试却没有成功，请联系管理员", this.Site.Caption, this.Site.Site.Account.Substring(1)), "");
@@ -2584,7 +2601,7 @@ namespace UMC.Proxy
                                 else
                                 {
                                     var quoteRoot = this.Site.Site.Account.Substring(1);
-                                    UMC.Security.AccessToken.Current.Put("DeviceQuote", currentTime.ToString()).Commit();
+                                    this.Context.Token.Put("DeviceQuote", currentTime.ToString()).Commit(Context.UserHostAddress);
                                     var home = DataFactory.Instance().WebDomain();
                                     var union = Data.WebResource.Instance().Provider["union"] ?? ".";
 
@@ -2693,8 +2710,6 @@ namespace UMC.Proxy
                 }
 
             }
-            var user = UMC.Security.Identity.Current;
-
 
 
             switch (this.Site.Site.UserModel ?? Entities.UserModel.Standard)
@@ -2893,14 +2908,9 @@ namespace UMC.Proxy
             private set;
         }
 
-        List<WebMeta> _Cookies = new List<WebMeta>();
         void Log(int duration)
         {
 
-            if (this.User == null || this.SiteCookie == null)
-            {
-                return;
-            }
             var time = (int)((UMC.Data.Reflection.TimeSpanMilli(DateTime.Now) - duration) / 1000);
             String Referrer = null;
             if (this.Context.UrlReferrer != null)
@@ -2922,15 +2932,43 @@ namespace UMC.Proxy
                 Status = statusCode,
                 Context = this.SiteCookie.Account
             };
-
-
-
             UMC.Data.DataFactory.Instance().Put(log);
         }
+
         void Response(NetHttpResponse httpResponse)
         {
+            var headers = httpResponse.Headers;
 
+            for (var i = 0; i < headers.Count; i++)
+            {
+                var key = headers.GetKey(i);
 
+                switch (key.ToLower())
+                {
+                    case "set-cookie":
+                        var value = headers.Get(i);
+                        if (this.Site.Site.AuthType == WebAuthType.All)
+                        {
+                            this.Context.AddHeader(key, value);
+                        }
+                        break;
+                    case "content-type":
+                    case "server":
+                    case "connection":
+                    case "keep-alive":
+                        break;
+                    case "content-length":
+                    case "transfer-encoding":
+                        if (httpResponse.IsHead)
+                        {
+                            this.Context.AddHeader(key, headers.Get(i));
+                        }
+                        break;
+                    default:
+                        this.Context.AddHeader(key, headers.Get(i));
+                        break;
+                }
+            }
             switch (httpResponse.StatusCode)
             {
                 case HttpStatusCode.Redirect:
@@ -2942,33 +2980,9 @@ namespace UMC.Proxy
                     this.Context.OutputFinish();
 
                     return;
-            }
-            var headers = httpResponse.Headers;
-
-            for (var i = 0; i < headers.Count; i++)
-            {
-                var key = headers.GetKey(i);
-
-                switch (key.ToLower())
-                {
-                    case "set-cookie":
-                        var value = headers.Get(i);
-                        if (value.IndexOf("; Path=", StringComparison.CurrentCultureIgnoreCase) == -1)
-                        {
-                            this.Context.AddHeader(key, value);
-                        }
-                        break;
-                    case "content-type":
-                    case "content-length":
-                    case "server":
-                    case "transfer-encoding":
-                    case "connection":
-                    case "keep-alive":
-                        break;
-                    default:
-                        this.Context.AddHeader(key, headers.Get(i));
-                        break;
-                }
+                default:
+                    this.Context.StatusCode = Convert.ToInt32(httpResponse.StatusCode);
+                    break;
             }
             var ContentType = httpResponse.ContentType;
 
@@ -2976,85 +2990,86 @@ namespace UMC.Proxy
             {
                 this.Context.ContentType = ContentType;
             }
-            else
+            else if(httpResponse.StatusCode == HttpStatusCode.OK)
             {
                 this.Context.ContentType = "text/plain";
             }
-
-            var ContentEncoding = httpResponse.ContentEncoding;
-
-            if (String.IsNullOrEmpty(ContentType) == false && httpResponse.StatusCode == HttpStatusCode.OK)
+            if (httpResponse.IsHead == false)
             {
-                SiteConfig.ReplaceSetting replaceSetting;
-                var vIndex = ContentType.IndexOf(';');
-                if (vIndex > 0)
-                {
-                    ContentType = ContentType.Substring(0, vIndex);
-                }
+                var ContentEncoding = httpResponse.ContentEncoding;
 
-
-                if (String.Equals("text/html", ContentType, StringComparison.CurrentCultureIgnoreCase))
+                if (String.IsNullOrEmpty(ContentType) == false && httpResponse.StatusCode == HttpStatusCode.OK)
                 {
-                    httpResponse.ReadAsStream(content =>
+                    SiteConfig.ReplaceSetting replaceSetting;
+                    var vIndex = ContentType.IndexOf(';');
+                    if (vIndex > 0)
                     {
-                        content.Position = 0;
-                        using (Stream ms = OuterHTML(content, ContentEncoding))
-                        {
-                            if (ms.Length == 0)
-                            {
-                                content.Position = 0;
-                                content.CopyTo(this.Context.OutputStream);
-                            }
-                            else
-                            {
-                                this.Context.ContentLength = ms.Length;
-                                ms.Position = 0;
-                                ms.CopyTo(this.Context.OutputStream);
-                            }
-                            this.Context.OutputFinish();
-                            ms.Close();
-                        }
-                        content.Close();
-                        content.Dispose();
+                        ContentType = ContentType.Substring(0, vIndex);
+                    }
 
-                    }, this.Context.Error);
-                    return;
-                }
-                else if (this.CheckPath(this.RawUrl.Split('?')[0], ContentType, out replaceSetting))
-                {
-                    httpResponse.ReadAsStream(content =>
+
+                    if (String.Equals("text/html", ContentType, StringComparison.CurrentCultureIgnoreCase))
                     {
-
-                        content.Position = 0;
-                        using (System.IO.Stream ms = this.ReplaceHost(content, ContentEncoding, replaceSetting))
+                        httpResponse.ReadAsStream(content =>
                         {
-                            if (ms.Length == 0)
+                            content.Position = 0;
+                            using (Stream ms = OuterHTML(content, ContentEncoding))
                             {
-                                content.Position = 0;
-                                content.CopyTo(this.Context.OutputStream);
+                                if (ms.Length == 0)
+                                {
+                                    content.Position = 0;
+                                    content.CopyTo(this.Context.OutputStream);
+                                }
+                                else
+                                {
+                                    this.Context.ContentLength = ms.Length;
+                                    ms.Position = 0;
+                                    ms.CopyTo(this.Context.OutputStream);
+                                }
+                                this.Context.OutputFinish();
+                                ms.Close();
                             }
-                            else
-                            {
-                                ms.Position = 0;
-                                this.Context.ContentLength = ms.Length;
-                                ms.CopyTo(this.Context.OutputStream);
-                            }
-                            this.Context.OutputFinish();
-                            ms.Close(); ;
-                        }
-                        content.Close();
-                        content.Dispose();
+                            content.Close();
+                            content.Dispose();
 
-                    }, this.Context.Error);
-                    return;
+                        }, this.Context.Error);
+                        return;
+                    }
+                    else if (this.CheckPath(this.RawUrl.Split('?')[0], ContentType, out replaceSetting))
+                    {
+                        httpResponse.ReadAsStream(content =>
+                        {
+
+                            content.Position = 0;
+                            using (System.IO.Stream ms = this.ReplaceHost(content, ContentEncoding, replaceSetting))
+                            {
+                                if (ms.Length == 0)
+                                {
+                                    content.Position = 0;
+                                    content.CopyTo(this.Context.OutputStream);
+                                }
+                                else
+                                {
+                                    ms.Position = 0;
+                                    this.Context.ContentLength = ms.Length;
+                                    ms.CopyTo(this.Context.OutputStream);
+                                }
+                                this.Context.OutputFinish();
+                                ms.Close(); ;
+                            }
+                            content.Close();
+                            content.Dispose();
+
+                        }, this.Context.Error);
+                        return;
+
+                    }
+                }
+                if (httpResponse.ContentLength > -1)
+                {
+                    this.Context.ContentLength = httpResponse.ContentLength;
 
                 }
-            }
-            this.Context.StatusCode = Convert.ToInt32(httpResponse.StatusCode);
-            if (httpResponse.ContentLength > -1)
-            {
-                this.Context.ContentLength = httpResponse.ContentLength;
-
             }
             httpResponse.ReadAsData((b, i, c) =>
             {
@@ -3104,30 +3119,42 @@ namespace UMC.Proxy
         long StartTime;
         void ProcessEnd()
         {
-            if (this.User.IsAuthenticated)
-            {
-                this.SaveCookie();
-            }
-            else
-            {
-                return;
-            }
             if ((this.StaticModel != 0 || this.Context.StatusCode >= 400))
             {
-                if (this.IsDebug)
-                {
-                    this.Loger.WriteLine("Cookie:{0}", this.Cookies.GetCookieHeader(this.Domain));
-                }
+
                 this.Log((int)(UMC.Data.Reflection.TimeSpanMilli(DateTime.Now) - StartTime));
 
             }
+            if (this.Site.Site.AuthType > WebAuthType.All)
+            {
+                this.SaveCookie();
+            }
+            if (this.IsDebug && User.IsAuthenticated)
+            {
+                this.Loger.WriteLine("Cookie:{0}", this.Cookies.GetCookieHeader(this.Domain));
+
+                var file = UMC.Data.Reflection.ConfigPath(String.Format("Static\\log\\{0}\\{1}.log", Site.Root, User.Name));
+                if (!System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(file)))
+                {
+                    System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file));
+                }
+                using (FileStream stream = new FileStream(file, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+                {
+
+                    var writer = new System.IO.StreamWriter(stream);
+                    writer.Write(this.Loger.ToString());
+                    writer.Flush();
+                    writer.Close();
+                }
+            }
+
             this.Loger.Close();
         }
         public void ProcessRequest()
         {
 
             this.StartTime = UMC.Data.Reflection.TimeSpanMilli(DateTime.Now);
-            this.User = UMC.Security.Identity.Current;
+
 
 
             if (this.RawUrl.StartsWith("/?$=") || this.RawUrl.StartsWith("/?%24=") || this.RawUrl.StartsWith("/?%24=Login") || this.RawUrl.EndsWith("?$=Login"))
@@ -3171,7 +3198,7 @@ namespace UMC.Proxy
             {
                 if (this.Site.Site.UserModel == Entities.UserModel.Bridge)
                 {
-                    var user = UMC.Security.Identity.Current;
+                    var user = this.Context.Token.Identity();// UMC.Security.Identity.Current;
                     if (user.IsAuthenticated)
                     {
                         this.Context.Headers["umc-request-user-id"] = Uri.EscapeDataString(UMC.Data.Utility.Guid(user.Id.Value));
@@ -3324,18 +3351,7 @@ namespace UMC.Proxy
                         this.Reqesut(Context.Transfer(getUrl, this.Cookies)).Get(httpResponse =>
                         {
 
-                            switch (httpResponse.StatusCode)
-                            {
-                                case HttpStatusCode.Redirect:
-                                case HttpStatusCode.RedirectKeepVerb:
-                                case HttpStatusCode.RedirectMethod:
 
-                                    this.Context.Redirect(ReplaceRedirect(httpResponse.Headers.Get("Location")));
-
-                                    this.Context.OutputFinish();
-                                    return;
-                            }
-                            this.Context.StatusCode = Convert.ToInt32(httpResponse.StatusCode);
 
                             var headers = httpResponse.Headers;
                             String contentEncoding = null;
@@ -3348,7 +3364,7 @@ namespace UMC.Proxy
                                 switch (key.ToLower())
                                 {
                                     case "set-cookie":
-                                        if (keyV.IndexOf("; Path=", StringComparison.CurrentCultureIgnoreCase) == -1)
+                                        if (this.Site.Site.AuthType == WebAuthType.All)
                                         {
                                             this.Context.AddHeader(key, keyV);
                                         }
@@ -3378,15 +3394,29 @@ namespace UMC.Proxy
                                         break;
                                 }
                             }
+                            switch (httpResponse.StatusCode)
+                            {
+                                case HttpStatusCode.Redirect:
+                                case HttpStatusCode.RedirectKeepVerb:
+                                case HttpStatusCode.RedirectMethod:
+
+                                    this.Context.Redirect(ReplaceRedirect(httpResponse.Headers.Get("Location")));
+
+                                    this.Context.OutputFinish();
+                                    return;
+                                default:
+                                    this.Context.StatusCode = Convert.ToInt32(httpResponse.StatusCode);
+                                    break;
+                            }
                             var contentType = httpResponse.ContentType ?? String.Empty;
 
-                            if (String.IsNullOrEmpty(contentType))
-                            {
-                                this.Context.ContentType = "text/plain";
-                            }
-                            else
+                            if (String.IsNullOrEmpty(contentType)==false)
                             {
                                 this.Context.ContentType = contentType;
+                            }
+                            else if (httpResponse.StatusCode == HttpStatusCode.OK)
+                            {
+                                this.Context.ContentType = "text/plain";
                             }
 
                             var ContentType = contentType;
@@ -3670,11 +3700,11 @@ namespace UMC.Proxy
                                 case "authurl":
                                     if (uB == Entities.UserBrowser.IE)
                                     {
-                                        return new Uri(this.Context.Url, String.Format("/!/{0}/?login", Utility.MD5(UMC.Security.AccessToken.Token.Value))).AbsoluteUri;//, url.PathAndQuery);//);
+                                        return new Uri(this.Context.Url, String.Format("/!/{0}/?login", Utility.MD5(this.Context.Token.Id.Value))).AbsoluteUri;//, url.PathAndQuery);//);
                                     }
                                     return "";
                                 case "authkey":
-                                    return new Uri(this.Context.Url, String.Format("/UMC/{0}/Proxy/Auth", UMC.Data.Utility.Guid(UMC.Security.AccessToken.Token.Value))).AbsoluteUri;// UMC.Data.Utility.Guid(UMC.Security.AccessToken.Token.Value), authKey);// ; ;//).AbsoluteUri;//, url.PathAndQuery);//);
+                                    return new Uri(this.Context.Url, String.Format("/UMC/{0}/Proxy/Auth", UMC.Data.Utility.Guid(this.Context.Token.Id.Value))).AbsoluteUri;// UMC.Data.Utility.Guid(UMC.Security.AccessToken.Token.Value), authKey);// ; ;//).AbsoluteUri;//, url.PathAndQuery);//);
 
                                 case "isie":
                                     return uB == Entities.UserBrowser.IE ? "yes" : "no";
@@ -3795,34 +3825,15 @@ namespace UMC.Proxy
         }
         public HttpWebRequest Reqesut(HttpWebRequest webr)
         {
-            if (this.Site.HeaderConf.Count > 0 && this.StaticModel != 0)
+            if (this.StaticModel != 0)
             {
-                var he = this.Site.HeaderConf.GetEnumerator();
-                while (he.MoveNext())
-                {
-                    var v = he.Current.Value;
-                    switch (v)
-                    {
-                        case "HOST":
-                            webr.Headers[he.Current.Key] = this.Context.Url.Authority;
-                            break;
-                        case "SCHEME":
-                            webr.Headers[he.Current.Key] = this.Context.Url.Scheme; 
-                            break;
-                        case "ADDRESS":
-                            webr.Headers[he.Current.Key] = this.Context.UserHostAddress; 
-                            break;
-                        default:
-                            webr.Headers[he.Current.Key] = v; 
-                            break;
-                    }
-                }
+                WebServlet.WebHeaderConf(webr, this.Site, this.Context);
             }
             if (String.IsNullOrEmpty(this.Host) == false)
             {
                 var h = this.Host;
-                webr.Headers[HttpRequestHeader.Host] = this.Host;
-                if (String.Equals(this.Host, this.Context.Url.Authority) == false)
+                webr.Headers[HttpRequestHeader.Host] = h;
+                if (String.Equals(h, this.Context.Url.Authority) == false)
                 {
                     var Referer = webr.Headers[HttpRequestHeader.Referer];
                     if (String.IsNullOrEmpty(Referer) == false)
@@ -3836,10 +3847,6 @@ namespace UMC.Proxy
                         webr.Headers["Origin"] = String.Format("{0}://{1}/", this.Domain.Scheme, h);
                     }
                 }
-            }
-            else
-            {
-                webr.Headers[HttpRequestHeader.Host] = this.Context.Url.Authority;
 
             }
             webr.Timeout = (this.Site.Site.Timeout ?? 100) * 1000;
@@ -3972,18 +3979,6 @@ namespace UMC.Proxy
 
             return UMC.Data.Utility.Parse36Encode(UMC.Data.Utility.IntParse(md));
         }
-        //public int IntMD5(String src)
-        //{
-        //    return IntMD5(src, this.Site.Site.Version);
-        //}
-        //public static int IntMD5(String src, String cap)
-        //{
-        //    var md5 = new System.Security.Cryptography.MD5CryptoServiceProvider();
-        //    byte[] md = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(src + cap));
-        //    return UMC.Data.Utility.IntParse(new Guid(md));
-        //    //BitConverter.ToString(md,4,8)
-        //}
-
         public static long Int64MD5(String src)
         {
             var md5 = new System.Security.Cryptography.MD5CryptoServiceProvider();
@@ -3996,7 +3991,6 @@ namespace UMC.Proxy
             }
             return BitConverter.ToInt64(b, 0);
         }
-        //public
 
 
         Stream OutputAppendJS(Stream response, string encoding, String key)
@@ -4072,7 +4066,7 @@ namespace UMC.Proxy
         bool _isInputReplaceHost;
         String ReplaceRawUrl(String rawUrl)
         {
-            //"".
+
             var sb = new System.Text.StringBuilder();
             char last = char.MinValue;
 

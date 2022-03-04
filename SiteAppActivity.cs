@@ -27,9 +27,9 @@ namespace UMC.Proxy.Activities
                     {
                         if (request.UserAgent.Contains("Windows NT") || request.UserAgent.Contains("Mac OS X"))
                         {
-                            var seesionKey = Utility.MD5(UMC.Security.AccessToken.Token.Value);
+                            var seesionKey = Utility.MD5(this.Context.Token.Id.Value);
 
-                            var sesion = UMC.Data.DataFactory.Instance().Session(UMC.Security.AccessToken.Token.ToString());
+                            var sesion = UMC.Data.DataFactory.Instance().Session(this.Context.Token.Id.ToString());
 
                             if (sesion != null)
                             {
@@ -47,7 +47,7 @@ namespace UMC.Proxy.Activities
                 switch (type)
                 {
                     case "Auth":
-                        auth = $"/!/{Utility.MD5(UMC.Security.AccessToken.Token.Value)}";
+                        auth = $"/!/{Utility.MD5(this.Context.Token.Id.Value)}";
                         break;
                 }
 
@@ -72,7 +72,7 @@ namespace UMC.Proxy.Activities
                 }
 
                 var keys = new List<String>();
-                var user = UMC.Security.Identity.Current;
+                var user = this.Context.Token.Identity();// UMC.Security.Identity.Current;
 
 
                 UMC.Data.Session<UMC.Web.WebMeta> session = new Data.Session<WebMeta>(user.Id.ToString() + "_Desktop");
@@ -82,7 +82,7 @@ namespace UMC.Proxy.Activities
                 .OrderBy((arg) => arg.Caption).ToList();
 
                 sites.Any(r => { keys.Add(r.Root); return false; });
-                var auths = UMC.Security.AuthManager.IsAuthorization(keys.ToArray());
+                var auths = UMC.Security.AuthManager.IsAuthorization(user, keys.ToArray());
 
                 var webr = UMC.Data.WebResource.Instance();
                 var ds = sites.ToArray();
@@ -92,10 +92,10 @@ namespace UMC.Proxy.Activities
 
                     if (auths[i] || SiteConfig.Config(d.AdminConf).Contains(user.Name))
                     {
-                        var authDomain = $"{request.Url.Scheme}://{d.Root}{union}{home}{auth}/?login";
-                        var domain = $"{request.Url.Scheme}://{d.Root}{union}{home}/?login";
+                        var domain = $"{request.Url.Scheme}://{d.Root}{union}{home}{auth}/?login";
 
-                        var docs = $"{request.Url.Scheme}://{d.Root}{union}{home}/Docs/";// request.Url.Scheme, d.Root, union, home);
+                        var docs = $"{request.Url.Scheme}://{d.Root}{union}{home}/Docs/";
+
                         var title = d.Caption ?? ""; ;
                         var vindex2 = title.IndexOf("v.", StringComparison.CurrentCultureIgnoreCase);
                         if (vindex2 > -1)
@@ -113,15 +113,12 @@ namespace UMC.Proxy.Activities
                             case 2:
                                 target = "max";
                                 break;
-                            case 3:
-                                var h = new Uri(new Uri(SiteConfig.Config(d.Domain)[0]), d.Home ?? "/").AbsoluteUri;
-                                domain = h;
-                                break;
-                            default:
-                                domain = authDomain;
-                                break;
                         }
-                        if (SiteConfig.Config(d.AuthConf).Contains("*"))
+                        if ((d.OpenModel ?? 0) == 3)
+                        {
+                            domain = new Uri(new Uri(SiteConfig.Config(d.Domain)[0]), d.Home ?? "/").AbsoluteUri;
+                        }
+                        else if (SiteConfig.Config(d.AuthConf).Contains("*") || d.AuthType == WebAuthType.All)
                         {
                             domain = $"{request.Url.Scheme}://{d.Root}{union}{home}{d.Home}";
                         }
@@ -217,7 +214,7 @@ namespace UMC.Proxy.Activities
                 var ui3 = ui.NewSection();
                 ui3.Header.Put("text", "应用管理员");
                 var ads = SiteConfig.Config(site.AdminConf);
-                var user = UMC.Security.Identity.Current;
+                var user = this.Context.Token.Identity(); // UMC.Security.Identity.Current;
 
 
                 if (ads.Length > 0)
@@ -250,18 +247,19 @@ namespace UMC.Proxy.Activities
             {
                 case "PlusDesktop":
                     {
-                        var user = UMC.Security.Identity.Current;
+                        var user = this.Context.Token.Identity();// UMC.Security.Identity.Current;
                         UMC.Data.Session<UMC.Web.WebMeta> session = new Data.Session<WebMeta>(user.Id.ToString() + "_Desktop");
                         var value = session.Value ?? new WebMeta();
                         value.Put(site.Root, true);
-                        session.Commit(value, user.Id.Value, true);
+
                         session.ContentType = "Settings";
+                        session.Commit(value, user.Id.Value, true, request.UserHostAddress);
                         response.Redirect(new WebMeta().Put("Desktop", true));
                     }
                     break;
                 case "RemoveDesktop":
                     {
-                        var user = UMC.Security.Identity.Current;
+                        var user = this.Context.Token.Identity(); //UMC.Security.Identity.Current;
                         UMC.Data.Session<UMC.Web.WebMeta> session = new Data.Session<WebMeta>(user.Id.ToString() + "_Desktop");
                         var value = session.Value ?? new WebMeta();
                         if (site.IsDesktop == true)
@@ -274,14 +272,14 @@ namespace UMC.Proxy.Activities
 
                         }
                         session.ContentType = "Settings";
-                        session.Commit(value, user.Id.Value, true);
+                        session.Commit(value, user.Id.Value, true, request.UserHostAddress);
                         response.Redirect(new WebMeta().Put("Desktop", true));
                     }
 
                     break;
                 case "Account":
                     {
-                        var user = UMC.Security.Identity.Current;
+                        var user = this.Context.Token.Identity(); //UMC.Security.Identity.Current;
                         switch (site.UserModel ?? UserModel.Standard)
                         {
                             case UserModel.Check:
@@ -325,7 +323,7 @@ namespace UMC.Proxy.Activities
                     break;
                 case "Delete":
                     {
-                        var ls = DataFactory.Instance().Cookies(site.Root, UMC.Security.Identity.Current.Id.Value)
+                        var ls = DataFactory.Instance().Cookies(site.Root, this.Context.Token.UId.Value)
                             .Where(r => String.IsNullOrEmpty(r.Account) == false).ToArray();
                         if (ls.Length == 0)
                         {
@@ -350,16 +348,16 @@ namespace UMC.Proxy.Activities
                                 return dc;
                             }
                         }), 0);
-                        var user = UMC.Security.Identity.Current;//.Id.Value
-                        UMC.Data.DataFactory.Instance().Delete(new Password { Key = SiteConfig.MD5Key(site.Root, user.Id.Value, indexValue) });
-                        DataFactory.Instance().Delete(new Cookie { user_id = user.Id.Value, Domain = site.Root, IndexValue = indexValue });
+                        //var user = this.Context.Token.Identity(); // UMC.Security.Identity.Current;//.Id.Value
+                        UMC.Data.DataFactory.Instance().Delete(new Password { Key = SiteConfig.MD5Key(site.Root, this.Context.Token.UId.Value, indexValue) });
+                        DataFactory.Instance().Delete(new Cookie { user_id = this.Context.Token.UId.Value, Domain = site.Root, IndexValue = indexValue });
 
                         this.Prompt(String.Format("解除账户绑定成功", site.Caption));
                     }
                     break;
                 case "Password":
                     {
-                        var ls = DataFactory.Instance().Cookies(site.Root, UMC.Security.Identity.Current.Id.Value)
+                        var ls = DataFactory.Instance().Cookies(site.Root, this.Context.Token.UId.Value)
                                .Where(r => String.IsNullOrEmpty(r.Account) == false).ToArray();
                         if (ls.Length == 0)
                         {
@@ -382,7 +380,7 @@ namespace UMC.Proxy.Activities
                             }
                             return dc;
                         }), 0);
-                        var cookie = UMC.Data.DataFactory.Instance().Password(SiteConfig.MD5Key(site.Root, UMC.Security.Identity.Current.Id.Value, indexValue));
+                        var cookie = UMC.Data.DataFactory.Instance().Password(SiteConfig.MD5Key(site.Root, this.Context.Token.UId.Value, indexValue));
                         if (String.IsNullOrEmpty(cookie) == false)
                         {
                             this.Context.Send("Clipboard", new WebMeta().Put("text", cookie), true);

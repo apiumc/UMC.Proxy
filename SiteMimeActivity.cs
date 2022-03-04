@@ -344,7 +344,7 @@ namespace UMC.Proxy.Activities
                     value["Feilds"] = feilds;
                     break;
                 default:
-                    var sValue = Web.UIDialog.AsyncDialog(Model, g =>
+                    var sValue = this.AsyncDialog(Model, g =>
                     {
                         switch (Model)
                         {

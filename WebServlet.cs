@@ -43,7 +43,7 @@ namespace UMC.Proxy
             }
             else
             {
-                Unauthorized(context, UMC.Data.WebResource.Instance().Provider["title"] ?? "门神网关", context.QueryString["oauth_callback"]);
+                Unauthorized(context, context.QueryString["oauth_callback"]);
             }
         }
         void Close(Net.NetContext context)
@@ -160,35 +160,6 @@ namespace UMC.Proxy
             }
 
         }
-        void HostModelPage(Net.NetContext context, String url)
-        {
-            context.AddHeader("Cache-Control", "no-store");
-            context.ContentType = "text/html; charset=UTF-8";
-            using (System.IO.Stream stream = typeof(HttpProxy).Assembly
-                                                  .GetManifestResourceStream("UMC.Proxy.Resources.login-html.html"))
-            {
-                var str = new System.IO.StreamReader(stream).ReadToEnd();
-                context.Output.Write(new System.Text.RegularExpressions.Regex("\\{(?<key>\\w+)\\}").Replace(str, g =>
-                {
-                    var key = g.Groups["key"].Value.ToLower();
-                    switch (key)
-                    {
-
-                        case "title":
-                            return "登录方式已升级";
-                        case "html":
-                            return $"<div class=\"umc-proxy-acounts\" style=\"margin-left: 60px;\"><a href=\"/HostModel\">老方式登录</a><a href=\"{url}\">用扫码登录</a></div>"
-
-                            + $"<div style=\"color: #999; line-height: 50px; text-align: center;\">{UMC.Data.WebResource.Instance().Provider["title"] ?? "门神网关"}推荐使用“用扫码登录”，安全简便。</div>";
-
-                    }
-                    return "";
-
-                }));
-
-            }
-
-        }
         void Auth(Net.NetContext context)
         {
             switch (context.HttpMethod)
@@ -217,7 +188,7 @@ namespace UMC.Proxy
                             {
                                 var sid = Data.Utility.Guid(id) ?? Utility.Guid(name, true).Value;
                                 var user = UMC.Security.Identity.Create(sid, name, alias ?? name, roles);
-                                AccessToken accessToken = AccessToken.Create(user, sid, "API/Auth", 30 * 60);
+                                AccessToken accessToken = AccessToken.Create(user, sid, 30 * 60);
 
                                 var sessionKey = UMC.Data.Utility.Guid(Data.Utility.Guid(String.Format("{0}{1}", appName, name), true).Value);
 
@@ -328,22 +299,24 @@ namespace UMC.Proxy
 
             if (String.IsNullOrEmpty(Domain) == false && Domain.StartsWith("/") == false)
             {
-
-                return new Uri(String.Format("{0}://{1}", context.Url.Scheme, Domain));
+                if (Domain.Split('.').Length == 2)
+                {
+                    return new Uri(String.Format("{0}://sso.{1}", context.Url.Scheme, Domain));
+                }
+                else
+                {
+                    return new Uri(String.Format("{0}://{1}", context.Url.Scheme, Domain));
+                }
             }
             else
             {
                 return new Uri(context.Url, "/");
             }
         }
-        void Unauthorized(Net.NetContext context, String title)
-        {
-            Unauthorized(context, title, context.RawUrl);
-        }
-        static void Unauthorized(Net.NetContext context, String title, string oauth_callback)
+        void Unauthorized(Net.NetContext context, string oauth_callback)
         {
 
-            UMC.Net.NetContext.Authorization(context);
+            UMC.Net.NetContext.Authorization(context, false);
             var webr = UMC.Data.WebResource.Instance();
 
             var reDomain = AuthDomain(context);
@@ -380,7 +353,7 @@ namespace UMC.Proxy
                     }
                     else
                     {
-                        UMC.Security.AccessToken.Current.Put("oauth_callback", oauth_callback).Commit();//] as string;
+                        context.Token.Put("oauth_callback", oauth_callback).Commit(context.UserHostAddress);
 
                         context.Redirect(String.Format("https://open.weixin.qq.com/connect/oauth2/authorize?appid={1}&response_type=code&scope=snsapi_base&state={1}&redirect_uri={0}#wechat_redirect", Uri.EscapeDataString(new Uri(reDomain, "/wxwork").AbsoluteUri), appids[0]));
                         return;
@@ -428,19 +401,18 @@ namespace UMC.Proxy
                     {
                         if (wkappids.Count > 0)
                         {
-                            UMC.Security.AccessToken.Current.Put("oauth_callback", oauth_callback).Commit();//] as string;
+                            context.Token.Put("oauth_callback", oauth_callback).Commit(context.UserHostAddress);
                             context.Redirect(String.Format("https://open.weixin.qq.com/connect/oauth2/authorize?appid={1}&response_type=code&scope=snsapi_base&state={1}&redirect_uri={0}#wechat_redirect", Uri.EscapeDataString(new Uri(reDomain, "/wxwork").AbsoluteUri), wkappids[0]));
 
                         }
                         else
                         {
                             Error(context, "微信使用提示", "缺少微信参数，请联系管理员", "");
-                            //context.Redirect("/Unauthorized");
                         }
                     }
                     else
                     {
-                        UMC.Security.AccessToken.Current.Put("oauth_callback", oauth_callback).Commit();//] as string;
+                        context.Token.Put("oauth_callback", oauth_callback).Commit(context.UserHostAddress);
                         context.Redirect(String.Format("https://open.weixin.qq.com/connect/oauth2/authorize?appid={1}&response_type=code&scope=snsapi_base&state={1}&redirect_uri={0}#wechat_redirect", Uri.EscapeDataString(new Uri(reDomain, "/weixin").AbsoluteUri), appids[0]));
                     }
                 }
@@ -510,26 +482,8 @@ namespace UMC.Proxy
                     else
                     {
                         context.StatusCode = 401;
-                        context.ContentType = "text/html; charset=UTF-8";
                         context.AddHeader("Cache-Control", "no-store");
-                        using (System.IO.Stream stream = typeof(WebServlet).Assembly//UMC.Proxy
-                                                    .GetManifestResourceStream("UMC.Proxy.Resources.pc.html"))
-                        {
-                            var str = new System.IO.StreamReader(stream).ReadToEnd();
-                            var v = new System.Text.RegularExpressions.Regex("\\{(?<key>\\w+)\\}").Replace(str, g =>
-                            {
-                                var key = g.Groups["key"].Value.ToLower();
-                                switch (key)
-                                {
-                                    case "title":
-                                        return title;
-                                }
-                                return "";
-
-                            });
-                            context.Output.Write(v);
-
-                        }
+                        this.LocalResources(context, "/v.0.1/proxy/login.html", true);
                     }
 
                 }
@@ -710,11 +664,11 @@ namespace UMC.Proxy
             {
                 if (System.IO.File.Exists(file))
                 {
-                    TransmitFile(context, file);
+                    TransmitFile(context, file, true);
                     return;
                 }
             }
-            var url = new Uri($"https://www.365lu.cn{path}?v.05");
+            var url = new Uri($"https://apiumc.github.io{path}?v.05");
 
 
             url.WebRequest().Get(xhr =>
@@ -728,7 +682,7 @@ namespace UMC.Proxy
                         if (c == 0 && b.Length == 0)
                         {
                             stream.Close();
-                            TransmitFile(context, file);
+                            TransmitFile(context, file, true);
                             context.OutputFinish();
                         }
                         else
@@ -762,14 +716,23 @@ namespace UMC.Proxy
             {
                 context.Headers["X-Umc-Request-Id"] = Guid.NewGuid().ToString();
             }
+            // System.Net.WebSockets.HttpListenerWebSocketContext
             var Domain = UMC.Proxy.DataFactory.Instance().WebDomain();
 
             var Path = context.Url.AbsolutePath;
             var site = context.Headers.GetIgnore("umc-proxy-site");
             switch (Path)
             {
-                case "/HostModel":
+                case "/ClearCookieHeader":
 
+                    context.AddHeader("Set-Cookie", "device=Clear; HttpOnly; Max-Age=1; Path=/");
+                    context.ContentType = "text/plain; charset=utf-8";
+                    for (var i = 0; i < context.Headers.Count; i++)
+                    {
+                        context.Output.WriteLine($"{context.Headers.GetKey(i)}:{context.Headers.Get(i)}");
+                    }
+                    return;
+                case "/HostModel":
                     context.AddHeader("Set-Cookie", "HostModel=Source; HttpOnly; Max-Age=300; Path=/");
                     context.Redirect(context.UrlReferrer.AbsoluteUri);
                     return;
@@ -888,8 +851,8 @@ namespace UMC.Proxy
 
                                     var login = (UMC.Data.Reflection.Configuration("account") ?? new ProviderConfiguration())["login"] ?? Provider.Create("name", "name");
                                     var timeout = UMC.Data.Utility.IntParse(login.Attributes["timeout"], 3600);
-
-                                    UMC.Security.AccessToken.Login(user, sessionKey.Value, timeout, "Desktop");
+                                    //request.IsApp ? "App" : "Desktop",
+                                    context.Token.Login(user, timeout, "Desktop", false, context.UserHostAddress);
                                 }
 
                                 UMC.Data.DataFactory.Instance().Delete(seesion);
@@ -1021,8 +984,7 @@ namespace UMC.Proxy
                         if (Path.StartsWith("/log/"))
                         {
                             Authorization(context);
-                            System.Security.Principal.IPrincipal user = UMC.Security.Identity.Current;
-                            if (user.IsInRole(UMC.Security.Membership.AdminRole) == false)
+                            if (context.Token.IsInRole(UMC.Security.Membership.AdminRole) == false)
                             {
                                 context.Redirect("/");
                                 return;
@@ -1030,7 +992,7 @@ namespace UMC.Proxy
                         }
                         if (System.IO.File.Exists(staticFile))
                         {
-                            TransmitFile(context, staticFile);
+                            TransmitFile(context, staticFile, true);
                             return;
                         }
                         else if (Path.StartsWith("/Docs/"))
@@ -1077,7 +1039,7 @@ namespace UMC.Proxy
                             LocalResources(context, Path, false);
                             return;
                         }
-                        else if (Path.StartsWith("/v"))
+                        else if (Path.StartsWith("/v."))
                         {
                             var keyIndex = Path.IndexOf('/', 2);
                             if (keyIndex > 0)
@@ -1138,9 +1100,8 @@ namespace UMC.Proxy
                 context.Redirect("/");
             }
         }
-        HttpWebRequest WebTransfer(SiteConfig siteConfig, UMC.Net.NetContext context)
+        public static void WebHeaderConf(HttpWebRequest webR, SiteConfig siteConfig, UMC.Net.NetContext context)
         {
-            var webR = new Uri(HttpProxy.WeightUri(siteConfig, context), context.RawUrl).WebRequest();
             if (siteConfig.HeaderConf.Count > 0)
             {
                 var he = siteConfig.HeaderConf.GetEnumerator();
@@ -1149,6 +1110,30 @@ namespace UMC.Proxy
                     var v = he.Current.Value;
                     switch (v)
                     {
+                        case "ROLES":
+                            if (context.Token != null)
+                            {
+                                webR.Headers[he.Current.Key] = context.Token.Roles;
+                            }
+                            break;
+                        case "TOKEN":
+                            if (context.Token != null)
+                            {
+                                webR.Headers[he.Current.Key] = context.Token.Id.ToString();
+                            }
+                            break;
+                        case "USERID":
+                            if (context.Token != null)
+                            {
+                                webR.Headers[he.Current.Key] = context.Token.UId.ToString();
+                            }
+                            break;
+                        case "USERNAME":
+                            if (context.Token != null)
+                            {
+                                webR.Headers[he.Current.Key] = context.Token.Username;
+                            }
+                            break;
                         case "HOST":
                             webR.Headers[he.Current.Key] = context.Url.Authority;
                             break;
@@ -1156,7 +1141,7 @@ namespace UMC.Proxy
                             webR.Headers[he.Current.Key] = context.Url.Scheme;
                             break;
                         case "ADDRESS":
-                            webR.Headers[he.Current.Key] = context.UserHostAddress;
+                            webR.Headers[he.Current.Key] = context.UserHostAddress.Split('/')[0];
                             break;
                         default:
                             webR.Headers[he.Current.Key] = v;
@@ -1164,6 +1149,12 @@ namespace UMC.Proxy
                     }
                 }
             }
+        }
+        HttpWebRequest WebTransfer(SiteConfig siteConfig, UMC.Net.NetContext context)
+        {
+            var webR = new Uri(HttpProxy.WeightUri(siteConfig, context), context.RawUrl).WebRequest();
+            WebHeaderConf(webR, siteConfig, context);
+
 
             var Headers = context.Headers;
             for (var i = 0; i < Headers.Count; i++)
@@ -1220,10 +1211,6 @@ namespace UMC.Proxy
                     }
                 }
                 webR.Headers[System.Net.HttpRequestHeader.Host] = host2;
-            }
-            else
-            {
-                webR.Headers[System.Net.HttpRequestHeader.Host] = context.Url.Authority;
             }
             return webR;
         }
@@ -1349,20 +1336,13 @@ namespace UMC.Proxy
                 }
             }
             InitCookie(context, Domain);
-            if (isNewCookie)
-            {
-                var sessionKey = UMC.Data.Utility.Guid(context.Cookies[Security.Membership.SessionCookieName], true).Value;
-                var user2 = UMC.Security.Identity.Create(sessionKey, "?", String.Empty);
-                UMC.Security.Principal.Create(user2, Security.AccessToken.Create(user2, sessionKey, "Client/" + context.UserHostAddress, 0));
-            }
-            else
-            {
-                UMC.Net.NetContext.Authorization(context);
-            }
+
+            UMC.Net.NetContext.Authorization(context, isNewCookie);
+
 
 
             var IsAuth = false;
-            var user = UMC.Security.Identity.Current;
+            var user = context.Token.Identity();
             System.Security.Principal.IPrincipal principal = user;
             switch (psite.Site.AuthType ?? Web.WebAuthType.User)
             {
@@ -1377,7 +1357,7 @@ namespace UMC.Proxy
                     IsAuth = true;
                     break;
                 case Web.WebAuthType.Check:
-                    if (UMC.Security.AuthManager.IsAuthorization(psite.Root))
+                    if (UMC.Security.AuthManager.IsAuthorization(user, psite.Root))
                     {
                         IsAuth = true;
                     }
@@ -1385,7 +1365,7 @@ namespace UMC.Proxy
                 case Web.WebAuthType.UserCheck:
                     if (principal.IsInRole(UMC.Security.Membership.UserRole))
                     {
-                        if (UMC.Security.AuthManager.IsAuthorization(psite.Root))
+                        if (UMC.Security.AuthManager.IsAuthorization(user, psite.Root))
                         {
                             IsAuth = true;
                         }
@@ -1422,7 +1402,7 @@ namespace UMC.Proxy
             }
             else
             {
-                Unauthorized(context, psite.Caption);
+                Unauthorized(context);
             }
 
         }

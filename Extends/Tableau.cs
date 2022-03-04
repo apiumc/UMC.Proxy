@@ -22,11 +22,11 @@ namespace UMC.Proxy.Extends
             var key = hashtable["key"] as Hashtable;
             return UMC.Data.Utility.Hex(UMC.Data.Utility.RSA(key["n"] as string, key["e"] as string, passwrod));
         }
-        Guid AppKey;
+        //Guid AppKey;
         public override string[] OutputCookies => new string[] { "XSRF-TOKEN" };
         public override bool Proxy(HttpProxy proxy)
         {
-            this.AppKey = UMC.Security.Principal.Current.AppKey ?? Guid.Empty;
+            //this.AppKey = UMC.Security.Principal.Current.AppKey ?? Guid.Empty;
             if (proxy.RawUrl.StartsWith("/t/"))
             {
                 Chart(proxy);
@@ -51,7 +51,7 @@ namespace UMC.Proxy.Extends
                     var result = UMC.Data.JSON.Deserialize(kko) as Hashtable;
                     var publicKey = result["result"] as Hashtable;
                     var Value = new WebMeta();
-                    UMC.Security.Principal.Create(this.AppKey);
+                    //UMC.Security.Principal.Create(this.AppKey);
                     proxy.ShareUser();
                     Value.Put("username", proxy.SiteCookie.Account, "encryptedPassword", encryptedPassword(publicKey, proxy.Password), "keyId", publicKey["keyId"] as string);
 

@@ -23,23 +23,23 @@ namespace UMC.Proxy.Activities
             {
                 this.Prompt("请传入KEY");
                 return this.DialogValue("none");
-            }); 
-            var config = UMC.Data.DataFactory.Instance().Config(mainKey);
-            var ConfValue = UIDialog.AsyncDialog("ConfValue", g =>
-            {
-                var title = "内容配置";
-                if (mainKey.StartsWith("SITE_JS_CONFIG_"))
-                {
-                    title = "脚本配置";
-                } 
-                var from5 = new UIFormDialog() { Title = title };
-                from5.AddTextarea(title, "ConfValue", config != null ? config.ConfValue : "").Put("Rows", 20);
-
-                from5.Submit("确认", this.Context.Request, "Mime.Config");
-                return from5;
-                 
             });
-            if (mainKey.StartsWith("SITE_")==false)
+            var config = UMC.Data.DataFactory.Instance().Config(mainKey);
+            var ConfValue = UIDialog.AsyncDialog(this.Context, "ConfValue", g =>
+          {
+              var title = "内容配置";
+              if (mainKey.StartsWith("SITE_JS_CONFIG_"))
+              {
+                  title = "脚本配置";
+              }
+              var from5 = new UIFormDialog() { Title = title };
+              from5.AddTextarea(title, "ConfValue", config != null ? config.ConfValue : "").Put("Rows", 20);
+
+              from5.Submit("确认", this.Context.Request, "Mime.Config");
+              return from5;
+
+          });
+            if (mainKey.StartsWith("SITE_") == false)
             {
                 this.Prompt("只能配置站点相关内容");
             }
