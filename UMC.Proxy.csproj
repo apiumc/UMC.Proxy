@@ -1,49 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFramework>net7.0</TargetFramework>
+    <Description>UMC应用网关</Description>
+    <PackageId>UMC.Proxy</PackageId>
+    <Version>1.0.34</Version>
+    <Authors>APIUMC</Authors>
+    <Company>小雨伞</Company>
+    <PackageDescription>基于UMC架构的应用网关</PackageDescription>
+    <PackageProjectUrl>https://github.com/apiumc/UMC.Proxy</PackageProjectUrl>
+    <PackageVersion>1.0.34</PackageVersion>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Compile Remove="Entities\Topic.cs" />
-    <Compile Remove="HttpProxy222.cs" />
-    <Compile Remove="SQLite.cs" />
-    <Compile Remove="XHER.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Remove="Resources\Auth\dingtalk.html" />
-    <None Remove="Resources\Auth\nosupport.html" />
-    <None Remove="Resources\Auth\wxwork.html" />
-    <None Remove="Resources\close.html" />
-    <None Remove="Resources\dingtalk.html" />
-    <None Remove="Resources\fields.html" />
-    <None Remove="Resources\login.html" />
-    <None Remove="Resources\pc.html" />
-    <None Remove="Resources\safe.html" />
-    <None Remove="Resources\wx.html" />
-    <None Remove="Resources\wxwork.html" />
-    <None Remove="Resources\fields %28副本%29.html" />
-    <None Remove="Resources\user %28副本%29.html" />
-    <None Remove="Resources\login %28副本%29.html" />
-    <None Remove="Resources\login-html %28副本%29.html" />
-    <None Remove="Resources\close %28副本%29.html" />
-    <None Remove="Resources\check %28副本%29.html" />
-    <None Remove="Resources\desktop %28副本%29.html" />
-    <None Remove="Resources\desktop %28副本%29.bg.html" />
-    <None Remove="Resources\desktop.bg.html" />
-    <None Remove="Resources\desktop %28副本%29.umc.html" />
-    <None Remove="Resources\favicon.ico" />
-    <None Remove="Resources\favicon.ico" />
-    <None Remove="Resources\pc %28副本%29.html" />
-    <None Remove="Resources\desktop.doc.html" />
-    <None Remove="Resources\Auth\dingtalk %28副本%29.html" />
-    <None Remove="Resources\pwd-Compel.html" />
-    <None Remove="Resources\pwd-Select.html" />
-    <None Remove="Resources\pwd-Selected.html" />
-    <None Remove="Resources\umc.html" />
-  </ItemGroup>
-
   <ItemGroup>
     <EmbeddedResource Include="Resources\Auth\dingtalk.html" />
     <EmbeddedResource Include="Resources\Auth\nosupport.html" />
@@ -57,7 +23,6 @@
     <EmbeddedResource Include="Resources\weixin.html" />
     <EmbeddedResource Include="Resources\wxwork.html" />
     <EmbeddedResource Include="Resources\login-html.html" />
-    <EmbeddedResource Include="Resources\login-new.html" />
     <EmbeddedResource Include="Resources\check.html" />
     <EmbeddedResource Include="Resources\desktop.umc.html" />
     <EmbeddedResource Include="Resources\desktop.html" />
@@ -68,9 +33,17 @@
     <EmbeddedResource Include="Resources\pwd-Select.html" />
     <EmbeddedResource Include="Resources\pwd-Selected.html" />
     <EmbeddedResource Include="Resources\umc.html" />
+    <EmbeddedResource Include="Resources\desktop.site.html" />
+    <EmbeddedResource Include="Resources\desktop.ui.html" />
+    <EmbeddedResource Include="Resources\dir.html" />
+    <EmbeddedResource Include="Resources\app.png" />
   </ItemGroup>
-
   <ItemGroup>
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="2.88.3" />
+    <PackageReference Include="SkiaSharp" Version="2.88.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UMC\UMC.csproj" />
     <ProjectReference Include="..\UMC.Data\UMC.Data.csproj" />
   </ItemGroup>
 </Project>

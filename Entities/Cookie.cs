@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using UMC.Data;
 
 namespace UMC.Proxy.Entities
 {
@@ -20,7 +21,7 @@ namespace UMC.Proxy.Entities
         Check = 2
     }
 
-    public class Cookie
+    public partial class Cookie : Record
     {
         /// <summary>
         /// 站点
@@ -74,7 +75,10 @@ namespace UMC.Proxy.Entities
 
         public String Config { get; set; }
 
+
         public AccountModel? Model { get; set; }
+         
+       
 
     }
 }

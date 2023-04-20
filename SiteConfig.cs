@@ -28,8 +28,63 @@ namespace UMC.Proxy
                 set;
             }
         }
+        public class LogSetting
+        {
+            public String[] Cookies
+            {
+                get;
+                set;
+            }
+            public String[] Headers
+            {
+                get;
+                set;
+            }
+            public string[] ResHeaders
+            {
+                get;
+                set;
+            }
+        }
+        public class TestUrl
+        {
+            public String[] Users
+            {
+                get;
+                set;
+            }
+            public String[] Auths
+            {
+                get;
+                set;
+            }
+            public string Url
+            {
 
+                get;
+                set;
+            }
+        }
+        public class KeyValue
+        {
 
+            public string Key
+            {
+
+                get;
+                set;
+            }
+            public string Value
+            {
+
+                get;
+                set;
+            }
+            public bool IsDel
+            {
+                get; set;
+            }
+        }
 
         public int WeightTotal
         {
@@ -45,7 +100,11 @@ namespace UMC.Proxy
         {
             get; private set;
         }
+        public bool IsFile
+        {
 
+            get; private set;
+        }
 
         public SiteConfig() { }
         public SiteConfig(Entities.Site site)
@@ -72,6 +131,7 @@ namespace UMC.Proxy
             List<string> domains = new List<string>();
             var ls = new List<int>();
             var total = 0;
+            var test = new Dictionary<String, TestUrl>();
             for (var i = 0; i < dom.Length; i++)
             {
                 var v = dom[i].Trim();
@@ -107,31 +167,44 @@ namespace UMC.Proxy
                         var tUrl = v;
                         if (tIndex > 0)
                         {
+                            tUrl = v.Substring(0, tIndex);
                             var uvs = v.Substring(tIndex + 1).Split(',', ' ');
                             var tUsers = new List<String>();
+                            var tAuth = new List<String>();
                             foreach (var uv in uvs)
                             {
-                                if (String.IsNullOrEmpty(uv.Trim()) == false)
+                                var uname = uv.Trim();
+                                if (String.IsNullOrEmpty(uname) == false)
                                 {
-                                    tUsers.Add(uv.Trim());
+                                    if (uname.IndexOf('/') == -1)
+                                    {
+                                        tUsers.Add(uname);
+                                    }
+                                    else
+                                    {
+                                        tAuth.Add(uname);
+                                    }
                                 }
                             }
-                            if (tUsers.Count > 0)
+                            if (tUsers.Count > 0 || tAuth.Count > 0)
+                            {
+                                var sIndex = tUrl.LastIndexOf('/');//, tIndex);
+                                if (sIndex > 0)
+                                {
+                                    tUrl = tUrl.Substring(0, sIndex);
+                                }
+                                test[tUrl.Trim()] = new TestUrl { Auths = tAuth.ToArray(), Users = tUsers.ToArray(), Url = tUrl };
+                            }
+                        }
+                        else
+                        {
+                            if (tUrl.StartsWith("file://") == false)
                             {
                                 var sIndex = tUrl.LastIndexOf('/');
                                 if (sIndex > 0)
                                 {
                                     tUrl = tUrl.Substring(0, sIndex);
                                 }
-                                this._test[tUrl.Trim()] = tUsers.ToArray();
-                            }
-                        }
-                        else
-                        {
-                            var sIndex = tUrl.LastIndexOf('/');
-                            if (sIndex > 0)
-                            {
-                                tUrl = tUrl.Substring(0, sIndex);
                             }
                             domains.Add(tUrl);
                             total++;
@@ -139,8 +212,24 @@ namespace UMC.Proxy
                         }
                     }
                 }
+
+                if (domains.Count > 0)
+                {
+                    if (IsFile == false)
+                    {
+                        var url = domains.Last();
+                        IsFile = url.StartsWith("file://", StringComparison.CurrentCultureIgnoreCase);
+                        if (IsFile)
+                        {
+                            domains.Clear();
+                            domains.Add(url);
+                            break;
+                        }
+                    }
+                }
             }
             this.Domains = domains.ToArray();
+            this._test = test.Values.ToArray();
 
             this.WeightTotal = total;
             this.Weights = ls.ToArray();
@@ -149,9 +238,10 @@ namespace UMC.Proxy
             this.OutputCookies = Config(site.OutputCookies);
             this.LogoutPath = Config(site.LogoutPath);
             this.AppendJSConf = Config(site.AppendJSConf);
-            this.AdminConf = Config(site.AdminConf);
-            this.LogPathConf = Config(site.LogPathConf);
-
+            this.RedirectPath = Config(site.RedirectPath);
+            this.ImagesConf = Config(site.ImagesConf);
+            // this.EventsConf = Config(site.EventsConf);
+            var subSite = new List<KeyValue>();
             if (String.IsNullOrEmpty(site.Conf) == false)
             {
                 var v = UMC.Data.JSON.Deserialize(site.Conf) as Hashtable;
@@ -161,18 +251,46 @@ namespace UMC.Proxy
                     while (pem.MoveNext())
                     {
                         var key = pem.Key as string;
-                        _subSite.Add(key, pem.Value.ToString());
+                        if (key.EndsWith("*"))
+                        {
+                            subSite.Add(new KeyValue { Key = key.Substring(0, key.Length - 1), Value = pem.Value.ToString(), IsDel = true });
+                        }
+                        else
+                        {
+                            subSite.Add(new KeyValue { Key = key, Value = pem.Value.ToString() });
+                        }
+
                     }
                 }
             }
+            _subSite = subSite.ToArray();
             InitStatic(site.StaticConf);
             InitHost(site.HostReConf);
             InitHeader(site.HeaderConf);
+            InitLogConf(site.LogConf);
 
 
             this.AllowAllPath = this.AllowPath.Contains("*");
+
+            var proxy = UMC.Data.Reflection.Configuration("proxy")[this.Site.Root];
+            if (proxy != null)
+            {
+                this.Proxy = UMC.Data.Reflection.CreateObject(proxy) as UMC.Proxy.SiteProxy;
+            }
         }
         public bool AllowAllPath
+        {
+            get; set;
+        }
+        public UMC.Proxy.SiteProxy Proxy
+        {
+
+            get; set;
+        }
+        /// <summary>
+        /// 默认ContentType类型
+        /// </summary>
+        public string ContentType
         {
             get; set;
         }
@@ -215,6 +333,44 @@ namespace UMC.Proxy
             }
             return true;
         }
+        void InitLogConf(String sConf)
+        {
+
+            this.LogConf = new LogSetting();
+
+            var cs = new List<String>();
+            var hs = new List<String>();
+            var rhs = new List<String>();
+            if (String.IsNullOrEmpty(sConf) == false)
+            {
+                foreach (var k in sConf.Split('\n', ','))
+                {
+
+                    var v = k.Trim();
+                    if (String.IsNullOrEmpty(v) == false && String.Equals(k, "none") == false)
+                    {
+                        if (v.StartsWith(":"))
+                        {
+                            hs.Add(v.Substring(1));
+                        }
+                        else if (v.EndsWith(":"))
+                        {
+
+                            rhs.Add(v.Substring(0, v.Length - 1));
+                        }
+                        else
+                        {
+                            cs.Add(v);
+                        }
+                    }
+
+                }
+            }
+
+            this.LogConf.Headers = hs.ToArray();
+            this.LogConf.ResHeaders = rhs.ToArray();
+            this.LogConf.Cookies = cs.ToArray();
+        }
         void InitHeader(String sConf)
         {
 
@@ -243,7 +399,15 @@ namespace UMC.Proxy
                         {
                             var mv = v.Substring(nindex + 1).Trim();//.ToLower();
                             var key = v.Substring(0, nindex).Trim();
-                            _HeaderConf[key] = mv;
+                            switch (key.ToLower())
+                            {
+                                case "content-type":
+                                    this.ContentType = mv;
+                                    break;
+                                default:
+                                    _HeaderConf[key] = mv;
+                                    break;
+                            }
 
                         }
                     }
@@ -331,7 +495,7 @@ namespace UMC.Proxy
 
         void InitHost(String sConf)
         {
-
+            var domain = Data.WebResource.Instance().Provider["domain"];
             var union = Data.WebResource.Instance().Provider["union"] ?? ".";
 
             if (String.IsNullOrEmpty(sConf) == false)
@@ -482,7 +646,7 @@ namespace UMC.Proxy
                                                                 }
 
 
-                                                                list[String.Format("{0}{1}{2}", sit.Root, union, DataFactory.Instance().WebDomain())] = surl;// new Uri(String.f);
+                                                                list[String.Format("{0}{1}{2}", sit.Root, union, domain)] = surl;// new Uri(String.f);
 
                                                                 break;
                                                             }
@@ -518,14 +682,14 @@ namespace UMC.Proxy
 
         public static Guid MD5Key(params object[] keys)
         {
-            var md5 = new System.Security.Cryptography.MD5CryptoServiceProvider();
+            var md5 = System.Security.Cryptography.MD5.Create();
             return new Guid(md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(String.Join(",", keys))));
 
 
         }
         public static String[] Config(String sConf)
         {
-            var saticPagePath = new List<String>();
+            var saticPagePath = new HashSet<String>();
 
             if (String.IsNullOrEmpty(sConf) == false)
             {
@@ -584,16 +748,11 @@ namespace UMC.Proxy
             get;
             private set;
         }
-        public String[] LogPathConf
+        public LogSetting LogConf
         {
             get;
             private set;
         }
-        //public String[] StaticPagePath
-        //{
-        //    get;
-        //    private set;
-        //}
 
         public String[] AllowPath
         {
@@ -610,14 +769,24 @@ namespace UMC.Proxy
             get;
             private set;
         }
-        public String[] AdminConf
+        public String[] ImagesConf
         {
             get;
             private set;
         }
+        // public String[] EventsConf
+        // {
+        //     get;
+        //     private set;
+        // }
         public String[] AppendJSConf
         {
 
+            get;
+            private set;
+        }
+        public string[] RedirectPath
+        {
             get;
             private set;
         }
@@ -642,9 +811,9 @@ namespace UMC.Proxy
         System.Collections.Generic.Dictionary<String, int> _StatusPage = new Dictionary<string, int>();
 
 
-        System.Collections.Generic.Dictionary<String, String[]> _test = new System.Collections.Generic.Dictionary<string, String[]>();
+        TestUrl[] _test;// new System.Collections.Generic.Dictionary<string, TestUrl>();
 
-        public System.Collections.Generic.Dictionary<String, String[]> Test
+        public TestUrl[] Test
         {
 
             get
@@ -663,8 +832,8 @@ namespace UMC.Proxy
             }
         }
 
-        System.Collections.Generic.Dictionary<String, String> _subSite = new System.Collections.Generic.Dictionary<string, string>();
-        public System.Collections.Generic.Dictionary<String, String> SubSite
+        KeyValue[] _subSite;
+        public KeyValue[] SubSite
         {
             get
             {

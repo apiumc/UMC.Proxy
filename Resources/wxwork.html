@@ -9,13 +9,6 @@
     <script src="/js/umc.js?v.02" type="text/javascript"></script>
     <script src="/UMC.Conf" type="text/javascript"></script>
     <script>
-        UMC.UI.Bridge = function (v, fn) {
-            fetch([UMC.UI.Config().posurl, '?', v.replace(/^&+/, '')].join('') , {
-                method: 'POST'
-            }).then(function (r) { return r.json() }).then(function (j) { fn(j) });
-
-        }
-
         UMC.UI.On("User", function (e, d) {
             if (d.Url) {
                 location.href = d.Url;
@@ -50,7 +43,9 @@
                 if (value.code) {
                     UMC.UI.Command('Account', "Login", {
                         type: 'wxwork',
-                        code: value.code
+                        appid: value.appid,
+                        code: value.code,
+                        transfer: value.state,
                     })
                     return;
                 }
@@ -77,7 +72,7 @@
             <div class="weui_text_area">
 
                 <p class="weui_msg_desc">
-                    只有在微信或企微环境中，才有效果
+                    只有在微信或企微环境中，才能正常工作
                 </p>
             </div>
         </div>

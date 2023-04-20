@@ -20,17 +20,18 @@
         #app .main-container {
             margin: 0px !important;
         }
+
+        .el-link iframe {
+            height: 100vh;
+        }
     </style>
+    <script src="/UMC.Conf" type="text/javascript"></script>
     <script src="/js/umc.date.js"></script>
-    <script src="/js/umc.database.js"></script>
-    <script src="/js/umc.grid.js"></script>
-    <script src="/js/umc.dialog.js"></script>
-    <script src="/js/umc.ui.js"></script>
     <script src="/js/umc.page.js"></script>
     <script src="/js/umc.paging.js"></script>
     <script>(function ($) {
 
-            $.Src = '/v.0.1/';
+            $.Src =  '/UMC.UI/';
 
             var callFn = {};
             var callJ = 0;
@@ -45,7 +46,6 @@
                 }), "*");
 
             }
-
             $(function () {
                 var app = $('section.app-main');
                 UMC(document.body).on('UI.Key.Url', function (e, v) {
@@ -73,24 +73,6 @@
                         value: v
                     }), "*");
 
-
-                });
-
-                $.UI.On('Page.Menu', function (e, vs) {
-                    var ts = [];
-                    for (var i = 0; i < vs.length; i++) {
-                        ts.push({
-                            click: {
-                                'key': 'Url',
-                                'send': vs[i].url
-                            },
-                            text: vs[i].title
-                        });
-                    }
-                    window.top.postMessage(JSON.stringify({
-                        type: 'nav',
-                        value: ts
-                    }), "*");
                 });
 
                 $(window).on('message', function (e) {
@@ -143,50 +125,75 @@
                     $(document.body).cls('umc-fullscreen', document.fullScreen || document.mozFullScreen || document.webkitIsFullScreen);
                 });
 
-                function page(v) {
-                    return function (root) {
-                        $('.pagination-container', root).paging(v.model, v.cmd, $('table tbody', root)).on('sort', root.find('.el-sort'));
-                        $('table', root).thead();
-                    }
-                };
                 $.page('debug', 'API UMC', false);
-                UMC.shift('main', 'debug');
-
-                $.UI.Command('Account', 'Menu', xhr => {
-                    var ps = $.pages || {};
-                    for (var i = 0; i < xhr.length; i++) {
-                        var it = xhr[i];
+                $.UI.Command('Account', 'Menu', UMC.UI.Config().site || '0', function (xhr) {
+                    var navs = [];
+                    var pm = xhr.menu;
+                    for (var i = 0; i < pm.length; i++) {
+                        var it = pm[i];
+                        var nav = { text: it.text, icon: it.icon };
                         var menu = it.menu || [];
                         if (menu.length > 0) {
-                            var mn = $.menu(it.icon, it.text);
+                            var ns = [];
                             for (var m = 0; m < menu.length; m++) {
                                 var c = menu[m];
-                                var k = c.url.substring(1);
-                                if (ps[k]) {
-                                    mn.page(k, c.text, page(ps[k]), true);
+                                if (!c.menu) {
+                                    var nm = { text: c.text };
+                                    ns.push(nm);
+                                    switch (c.url.charAt(0)) {
+                                        case '#':
+                                            var k = c.url.substring(1);
+                                            var key = k.substring(0, k.indexOf('/'));
+                                            $.page(key ? key : k);
 
-                                } else {
-                                    var key = k.substring(0, k.indexOf('/'));
-                                    key ? $.page(key) : 0;
-                                    mn.page(k, c.text, true);
+                                            nm.click = {
+                                                'key': 'Url',
+                                                'send': c.url
+                                            };
+                                            break;
+                                        default:
+                                            nm.href = c.url;
+                                            if (c.target) {
+                                                nm.target = c.target
+                                            }
+                                            break;
+                                    }
                                 }
                             };
+                            if (ns.length > 0) {
+                                nav.menu = ns;
+                                navs.push(nav);
+                            }
                         } else {
-                            var k = it.url.substring(1);
-                            if (ps[k]) {
-                                $.page(k, it.text, page(ps[k]), it.icon);
-
-                            } else {
-                                var key = k.substring(0, k.indexOf('/'));
-                                key ? $.page(key) : 0;
-                                $.page(k, it.text, it.icon);
+                            navs.push(nav);
+                            switch (it.url.charAt(0)) {
+                                case '#':
+                                    var k = it.url.substring(1);
+                                    var key = k.substring(0, k.indexOf('/'));
+                                    $.page(key ? key : k);
+                                    nav.click = {
+                                        'key': 'Url',
+                                        'send': it.url
+                                    };
+                                    break;
+                                default:
+                                    nav.href = it.url;
+                                    if (it.target) {
+                                        nav.target = it.target
+                                    }
+                                    break;
                             }
 
                         }
                     };
-                    $.menu();
-                    $(window).on('popstate');
 
+                    window.top.postMessage(JSON.stringify({
+                        type: 'nav',
+                        value: navs
+                    }), "*");
+
+                    UMC.shift('main', xhr.home || 'debug');
+                    $(window).on('popstate');
                 });
             });
 
@@ -198,7 +205,6 @@
         <div class="main-container">
             <section class="app-main">
             </section>
-
         </div>
     </div>
 </body>

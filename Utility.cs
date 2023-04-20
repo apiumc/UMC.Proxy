@@ -2,6 +2,12 @@
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Text;
+using System.Linq;
+using UMC.Data;
+using System.Reflection;
+using UMC.Net;
+using UMC.Web;
+using System.Security.Cryptography.X509Certificates;
 
 namespace UMC.Proxy
 {
@@ -10,7 +16,7 @@ namespace UMC.Proxy
 
         public static String MD5(System.Guid guid)
         {
-            using (var md5 = new System.Security.Cryptography.MD5CryptoServiceProvider())
+            using (var md5 = System.Security.Cryptography.MD5.Create())
             {
                 return Guid(new System.Guid(md5.ComputeHash(guid.ToByteArray())));
             }
@@ -206,6 +212,53 @@ namespace UMC.Proxy
             }
             return null;
         }
+        public static string Expire(int now, int expireTime, string defaultStr)
+        {
+            var sExpireTime = defaultStr;// "未启用";
+            if (expireTime > 0)
+            {
+                if (expireTime > now)
+                {
+                    var t = new TimeSpan(0, 0, expireTime - now).TotalDays;
+                    if (t < 0)
+                    {
+                        sExpireTime = $"还剩{t:0.0}天";
+                    }
+                    else
+                    {
+                        sExpireTime = $"还剩{t:0}天";
+                    }
+                }
+                else
+                {
+                    sExpireTime = "已过期";
+                }
+            }
+            return sExpireTime;
+        }
+        public static void Certificate(NetHttpResponse r)
+        {
+            if (r.StatusCode == System.Net.HttpStatusCode.OK)
+            {
+                r.ReadAsString(str =>
+                {
+                    var cert = JSON.Deserialize<WebMeta>(str);
+                    var domain = cert["domain"];
+                    var privateKey = cert["privateKey"];
+                    var publicKey = cert["publicKey"];
+
+                    var x509 = X509Certificate2.CreateFromPem(publicKey, privateKey);
+
+                    var p = UMC.Data.Provider.Create(domain, "apiumc");
+                    p.Attributes["publicKey"] = publicKey;
+                    p.Attributes["privateKey"] = privateKey;
+                    var certs = UMC.Data.Reflection.Configuration("certs");
+                    certs.Add(p);
+                    UMC.Net.Certificater.Certificates[p.Name] = new Certificater { Name = p.Name, Status = 1, Certificate = x509 };
+                    UMC.Data.Reflection.Configuration("certs", certs);
+                });
+            }
+        }
         public static Web.WebMeta FromValue(String html, bool isKey)
         {
 
@@ -285,5 +338,36 @@ namespace UMC.Proxy
             }
             return null;
         }
+        public static System.Net.HttpWebRequest Sign(System.Net.HttpWebRequest http, System.Collections.Specialized.NameValueCollection nvs, String secret)
+        {
+            var p = Assembly.GetEntryAssembly().GetCustomAttributes().First(r => r is System.Reflection.AssemblyInformationalVersionAttribute) as System.Reflection.AssemblyInformationalVersionAttribute;
+
+            nvs.Add("umc-app-version", p.InformationalVersion);
+            nvs.Add("umc-proxy-sites", HotCache.Caches().First(r => r.Name == "Site").Count.ToString());
+            nvs.Add("umc-proxy-session", HotCache.Caches().First(r => r.Name == "Session").Count.ToString());
+            nvs.Add("umc-client-pfm", "sync");
+            nvs.Add("umc-request-time", UMC.Data.Utility.TimeSpan().ToString());
+            nvs.Add("umc-request-sign", UMC.Data.Utility.Sign(nvs, secret));
+
+
+            for (var i = 0; i < nvs.Count; i++)
+            {
+                http.Headers.Add(nvs.GetKey(i), nvs[i]);
+            }
+            return http;
+        }
     }
+
+    // class License
+    // {
+    //     public int Quantity
+    //     {
+    //         get;
+    //         set;
+    //     }
+    //     public int ExpireTime
+    //     {
+    //         get; set;
+    //     }
+    // }
 }

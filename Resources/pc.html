@@ -15,15 +15,7 @@
     <script src="/js/umc.js" type="text/javascript"></script>
 
     <script src="/UMC.Conf" type="text/javascript"></script>
-    <script>UMC.UI.Bridge = function (v, fn) {
-
-            var xhr = new XMLHttpRequest();
-            xhr.onload = function () {
-                fn(JSON.parse(xhr.responseText));
-            };
-            xhr.open('POST', [UMC.UI.Config().posurl, '?', v.replace(/^&+/, '')].join(''), true);
-            xhr.send('');
-        };
+    <script>
 
         UMC(function ($) {
 

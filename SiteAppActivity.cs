@@ -1,23 +1,31 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Collections;
-using System.Reflection;
 using UMC.Web;
 using UMC.Data.Entities;
-using UMC.Web.UI;
 using UMC.Proxy.Entities;
+using System.IO;
+using UMC.Data;
+using System.Text.RegularExpressions;
 
 namespace UMC.Proxy.Activities
 {
     [UMC.Web.Mapping("Proxy", "App", Auth = WebAuthType.User)]
-    class SiteAppActivity : UMC.Web.WebActivity
+    public class SiteAppActivity : UMC.Web.WebActivity
     {
         public override void ProcessActivity(WebRequest request, WebResponse response)
         {
-            var home = DataFactory.Instance().WebDomain();
+            var home = request.Url.Authority;//
+
             var union = Data.WebResource.Instance().Provider["union"] ?? ".";
+            if (Regex.IsMatch(request.Url.Host, @"^(\d{1,3}.)+\d{1,3}$"))
+            {
+                home = WebResource.Instance().WebDomain();
+                if (home == "localhost")
+                {
+                    union = ".";
+                }
+            }
             var Key = this.AsyncDialog("Key", g =>
             {
                 var auth = String.Empty;
@@ -27,15 +35,15 @@ namespace UMC.Proxy.Activities
                     {
                         if (request.UserAgent.Contains("Windows NT") || request.UserAgent.Contains("Mac OS X"))
                         {
-                            var seesionKey = Utility.MD5(this.Context.Token.Id.Value);
+                            var seesionKey = Utility.MD5(this.Context.Token.Device.Value);
 
-                            var sesion = UMC.Data.DataFactory.Instance().Session(this.Context.Token.Id.ToString());
+                            var sesion = UMC.Data.DataFactory.Instance().Session(this.Context.Token.Device.ToString());
 
                             if (sesion != null)
                             {
                                 sesion.SessionKey = seesionKey;
 
-                                UMC.Data.DataFactory.Instance().Post(sesion);
+                                UMC.Data.DataFactory.Instance().Put(sesion);
                             }
                             return this.DialogValue("Auth");
                         }
@@ -47,7 +55,7 @@ namespace UMC.Proxy.Activities
                 switch (type)
                 {
                     case "Auth":
-                        auth = $"/!/{Utility.MD5(this.Context.Token.Id.Value)}";
+                        auth = $"/!/{Utility.MD5(this.Context.Token.Device.Value)}";
                         break;
                 }
 
@@ -59,30 +67,33 @@ namespace UMC.Proxy.Activities
                 sts.Columns.Add("target");
                 sts.Columns.Add("badge");
                 sts.Columns.Add("desktop", typeof(bool));
-                sts.Columns.Add("docs");
 
 
                 if (request.IsMaster)
                 {
-                    sts.Rows.Add("应用设置", "UMC", "/Setting/",
-                      "/css/images/icon/prefapp.png", "max", "", true, new Uri(request.Url, "/Docs/").AbsoluteUri);
-                    sts.Rows.Add("帮助文档", "UMC", "/Docs/",
-                   "/css/images/icon/ibooks.png", "max", "", true, new Uri(request.Url, "/Docs/").AbsoluteUri);
+                    sts.Rows.Add("应用设置", "Settings", "/Setting/",
+                      "/css/images/icon/prefapp.png", "max", "", true);
 
+                    sts.Rows.Add("新增应用", "Add", "javascript:void(0)",
+                   "/css/images/icon/add.png", "max", "", true);
+
+                    sts.Rows.Add("帮助文档", "Docs", "/Docs/",
+                   "/css/images/icon/ibooks.png", "max", "", true);
                 }
 
                 var keys = new List<String>();
-                var user = this.Context.Token.Identity();// UMC.Security.Identity.Current;
+                var user = this.Context.Token.Identity();
 
 
-                UMC.Data.Session<UMC.Web.WebMeta> session = new Data.Session<WebMeta>(user.Id.ToString() + "_Desktop");
+
+                UMC.Data.Session<UMC.Web.WebMeta> session = new Data.Session<WebMeta>($"{user.Id}_Desktop");
 
                 var desktop = session.Value ?? new WebMeta();
                 var sites = DataFactory.Instance().Site().Where(r => r.Flag != -1).Where(r => (r.IsModule ?? false) == false)
                 .OrderBy((arg) => arg.Caption).ToList();
 
-                sites.Any(r => { keys.Add(r.Root); return false; });
-                var auths = UMC.Security.AuthManager.IsAuthorization(user, keys.ToArray());
+                Utility.Each(sites, r => keys.Add($"Desktop/{r.Root}"));
+                var auths = UMC.Security.AuthManager.IsAuthorization(user, 0, keys.ToArray());
 
                 var webr = UMC.Data.WebResource.Instance();
                 var ds = sites.ToArray();
@@ -90,18 +101,13 @@ namespace UMC.Proxy.Activities
                 {
                     var d = ds[i];
 
-                    if (auths[i] || SiteConfig.Config(d.AdminConf).Contains(user.Name))
+                    if (auths[i])
                     {
-                        var domain = $"{request.Url.Scheme}://{d.Root}{union}{home}{auth}/?login";
-
-                        var docs = $"{request.Url.Scheme}://{d.Root}{union}{home}/Docs/";
+                        var strUrl = $"{request.Url.Scheme}://{d.Root}{union}{home}{auth}/UMC.For/{request.Server}";
 
                         var title = d.Caption ?? ""; ;
-                        var vindex2 = title.IndexOf("v.", StringComparison.CurrentCultureIgnoreCase);
-                        if (vindex2 > -1)
-                        {
-                            title = title.Substring(0, vindex2);
-                        }
+
+
                         var badge = "";
 
                         var target = "_blank";
@@ -116,11 +122,11 @@ namespace UMC.Proxy.Activities
                         }
                         if ((d.OpenModel ?? 0) == 3)
                         {
-                            domain = new Uri(new Uri(SiteConfig.Config(d.Domain)[0]), d.Home ?? "/").AbsoluteUri;
+                            strUrl = new Uri(new Uri(SiteConfig.Config(d.Domain)[0]), d.Home ?? "/").AbsoluteUri;
                         }
                         else if (SiteConfig.Config(d.AuthConf).Contains("*") || d.AuthType == WebAuthType.All)
                         {
-                            domain = $"{request.Url.Scheme}://{d.Root}{union}{home}{d.Home}";
+                            strUrl = $"{request.Url.Scheme}://{d.Root}{union}{home}{d.Home}";
                         }
                         var isDesktop = desktop.ContainsKey(d.Root);
                         if (d.IsDesktop == true)
@@ -137,30 +143,30 @@ namespace UMC.Proxy.Activities
                         }
 
 
-                        sts.Rows.Add(title.Trim(), d.Root, domain, webr.ImageResolve(Data.Utility.Guid(d.Root, true).Value, "1", 4), target, badge, isDesktop, docs);
+                        sts.Rows.Add(title.Trim(), d.Root, strUrl, webr.ImageResolve(Data.Utility.Guid(d.Root, true).Value, "1", 4) + $"&_t={d.ModifyTime}", target, badge, isDesktop);
                     }
                 }
-                response.Redirect(sts);
+                if (String.IsNullOrEmpty(WebResource.Instance().Provider["appId"]))
+                {
+                    response.Redirect("System", "License", new Web.UIConfirmDialog("当前版本未注册，请完成登记注册")
+                    {
+                        Title = "应用注册",
+                        DefaultValue = "Select"
+                    }, false);
+                }
 
-
+                this.Context.Send("Desktop", new WebMeta().Put("apps", sts), true);
                 return this.DialogValue("none");
             });
-            var site = DataFactory.Instance().Site(Key);
-            if (site == null)
-            {
-                this.Prompt("标准组件，不支持此操作");
-            }
-            var caption = site.Caption;
-            var vindex = caption.IndexOf("v.", StringComparison.CurrentCultureIgnoreCase);
 
-            var version = (site.Version ?? "01");
-            if (vindex > -1)
-            {
-                caption = caption.Substring(0, vindex);
-                //version = caption.Substring(vindex);
-            }
+            var site = DataFactory.Instance().Site(Key);
+
             var Model = this.AsyncDialog("Model", gkey =>
             {
+                if (site == null)
+                {
+                    return this.DialogValue(Key);
+                }
                 WebMeta form = request.SendValues ?? new UMC.Web.WebMeta();
 
                 if (form.ContainsKey("limit") == false)
@@ -169,19 +175,22 @@ namespace UMC.Proxy.Activities
                             .Builder(), true);
 
                 }
+                var title = new UITitle("关于应用");
+                var ui = UMC.Web.UISection.Create(title);// new UITitle("关于应用"));
+
+                title.Style.BgColor(0x28c7ca);
+                title.Style.Color(0xfff);
 
 
-                var ui = UMC.Web.UISection.Create(new UITitle("关于应用"));
+
+                var Discount = new UIHeader.Portrait(Data.WebResource.Instance().ImageResolve(Data.Utility.Guid(site.Root, true).Value, "1", 4) + $"&_t={site.ModifyTime}");
 
 
-                var Discount = new UIHeader.Portrait(Data.WebResource.Instance().ImageResolve(Data.Utility.Guid(site.Root, true).Value, "1", 4));
+                Discount.Value(site.Caption);
 
 
-                Discount.Value(caption);
-
-
-                var color = 0x28CA40;
-                Discount.Gradient(color, color);
+                //var color = 0x28CA40;
+                Discount.Gradient(0x28c7ca, 0x0eaee3);
 
                 var header = new UIHeader();
 
@@ -192,7 +201,7 @@ namespace UMC.Proxy.Activities
 
 
                 ui.UIHeader = header;
-                ui.AddCell("版本", version);
+                ui.AddCell("版本", site.Version ?? "01");
 
                 switch (site.UserModel ?? UserModel.Standard)
                 {
@@ -213,22 +222,18 @@ namespace UMC.Proxy.Activities
 
                 var ui3 = ui.NewSection();
                 ui3.Header.Put("text", "应用管理员");
-                var ads = SiteConfig.Config(site.AdminConf);
-                var user = this.Context.Token.Identity(); // UMC.Security.Identity.Current;
 
-
-                if (ads.Length > 0)
+                var user = this.Context.Token.Identity();
+                var isAdmin = false;
+                var admins = Data.DataFactory.Instance().Users(site.SiteKey.Value, UMC.Security.Membership.AdminRole);
+                if (admins.Length > 0)
                 {
-                    foreach (var v in ads)
+                    foreach (var v in admins)
                     {
-                        if (String.Equals(user.Name, v))
+                        ui3.AddCell('\uf2c0', v.Alias, "");
+                        if (isAdmin == false)
                         {
-                            ui3.AddCell('\uf2c0', v, "应用管理", new UIClick(site.Root).Send(request.Model, "Site"));
-                        }
-                        else
-                        {
-
-                            ui3.AddCell('\uf2c0', v, "");
+                            isAdmin = v.Id == user.Id;
                         }
                     }
                 }
@@ -239,19 +244,117 @@ namespace UMC.Proxy.Activities
 
                 }
 
+                if (request.IsCashier || isAdmin)
+                    ui3.NewSection().AddCell('\uf085', "应用配置", String.Empty, new UIClick(site.Root).Send(request.Model, "Site"));
+
 
                 response.Redirect(ui);
                 return this.DialogValue("none");
             });
             switch (Model)
             {
+                case "Settings":
+                    this.AsyncDialog(Model, r =>
+                    {
+                        var sheet = new UISheetDialog();
+                        sheet.Put(new UIClick() { Text = "网关服务" }.Send("Proxy", "Server"))
+                        .Put(new UIClick() { Text = "高速存储" }.Send("System", "Cache"))
+                        .Put(new UIClick("account") { Text = "账户配置" }.Send("System", "Config"));
+                        return sheet;
+                    });
+                    break;
+                case "Desktop":
+                    {
+                        if (request.IsMaster)
+                        {
+                            var media_id = this.AsyncDialog("media_id", g =>
+                            {
+                                if (request.IsApp)
+                                {
+                                    return Web.UIDialog.CreateDialog("File");
+                                }
+                                else
+                                {
+                                    var from = new Web.UIFormDialog() { Title = "设置登录背景图" };
+                                    from.AddFile("选择图片", "media_id", String.Empty);
+                                    return from;
+                                }
+                            });
+                            var bgSrc = String.Empty;
+                            if (media_id.StartsWith("/TEMP/"))
+                            {
+                                bgSrc = String.Format("/UserResources/BgSrc{0}", media_id.Substring(5));
+                                string filename = UMC.Data.Reflection.ConfigPath(String.Format("Static{0}", media_id));
+                                if (System.IO.File.Exists(filename))
+                                {
+                                    using (System.IO.Stream sWriter = File.OpenRead(filename))
+                                    {
+                                        UMC.Data.Utility.Copy(sWriter, UMC.Data.Reflection.ConfigPath($"Static{bgSrc}"));
+                                        sWriter.Close();
+                                    }
+
+                                    var provider = UMC.Data.WebResource.Instance().Provider;
+                                    var pc = Reflection.Configuration("assembly") ?? new ProviderConfiguration();
+                                    pc.Add(provider);//["WebResource"] = provider;
+                                    provider.Attributes["bgsrc"] = bgSrc;
+                                    Reflection.Configuration("assembly", pc);
+                                    this.Prompt("设置成功");
+                                }
+                            }
+                            else if (media_id.StartsWith("http://") || media_id.StartsWith("https://"))
+                            {
+                                var url = new Uri(media_id);
+                                bgSrc = String.Format("/UserResources/BgSrc{0}", url.AbsolutePath.Substring(5));
+                                WebResource.Instance().Transfer(url, bgSrc);
+
+                                var provider = UMC.Data.WebResource.Instance().Provider;
+                                var pc = Reflection.Configuration("assembly") ?? new ProviderConfiguration();
+
+                                pc.Add(provider);
+                                provider.Attributes["bgsrc"] = bgSrc;
+                                Reflection.Configuration("assembly", pc);
+                                this.Prompt("设置成功");
+                            }
+                        }
+                    }
+                    break;
+                case "BgSrc":
+                    {
+                        var media_id = this.AsyncDialog("media_id", "none");
+                        if (media_id.StartsWith("/TEMP/"))
+                        {
+                            string filename = UMC.Data.Reflection.ConfigPath(String.Format("Static{0}", media_id));
+                            if (System.IO.File.Exists(filename))
+                            {
+                                var bgSrc = String.Format("/UserResources/BgSrc{0}", media_id.Substring(5));
+                                using (System.IO.Stream sWriter = File.OpenRead(filename))
+                                {
+                                    UMC.Data.Utility.Copy(sWriter, UMC.Data.Reflection.ConfigPath($"Static{bgSrc}"));
+                                    sWriter.Close();
+                                }
+
+                                var user = this.Context.Token.Identity();
+                                UMC.Data.Session<UMC.Web.WebMeta> session = new Data.Session<WebMeta>($"{user.Id}_Desktop");
+                                var value = session.Value ?? new WebMeta();
+                                value.Put("BgSrc", bgSrc);
+                                session.ContentType = "Settings";
+                                session.Commit(value, user.Id.Value, true, request.UserHostAddress);
+
+                                this.Context.Send("BgSrc", new WebMeta().Put("src", bgSrc), true);
+
+                                response.Redirect(request.Model, request.Command, new WebMeta().Put("Key", "LoginBgSrc", "BgSrc", bgSrc), true);
+
+
+                            }
+                        }
+                    }
+                    break;
                 case "PlusDesktop":
                     {
-                        var user = this.Context.Token.Identity();// UMC.Security.Identity.Current;
-                        UMC.Data.Session<UMC.Web.WebMeta> session = new Data.Session<WebMeta>(user.Id.ToString() + "_Desktop");
+                        var user = this.Context.Token.Identity();
+                        UMC.Data.Session<UMC.Web.WebMeta> session = new Data.Session<WebMeta>($"{user.Id}_Desktop");
                         var value = session.Value ?? new WebMeta();
                         value.Put(site.Root, true);
-
                         session.ContentType = "Settings";
                         session.Commit(value, user.Id.Value, true, request.UserHostAddress);
                         response.Redirect(new WebMeta().Put("Desktop", true));
@@ -259,8 +362,8 @@ namespace UMC.Proxy.Activities
                     break;
                 case "RemoveDesktop":
                     {
-                        var user = this.Context.Token.Identity(); //UMC.Security.Identity.Current;
-                        UMC.Data.Session<UMC.Web.WebMeta> session = new Data.Session<WebMeta>(user.Id.ToString() + "_Desktop");
+                        var user = this.Context.Token.Identity();
+                        UMC.Data.Session<UMC.Web.WebMeta> session = new Data.Session<WebMeta>($"{user.Id}_Desktop");
                         var value = session.Value ?? new WebMeta();
                         if (site.IsDesktop == true)
                         {
@@ -279,7 +382,7 @@ namespace UMC.Proxy.Activities
                     break;
                 case "Account":
                     {
-                        var user = this.Context.Token.Identity(); //UMC.Security.Identity.Current;
+                        var user = this.Context.Token.Identity();
                         switch (site.UserModel ?? UserModel.Standard)
                         {
                             case UserModel.Check:
@@ -315,15 +418,15 @@ namespace UMC.Proxy.Activities
                                 DataFactory.Instance().Put(new Entities.Cookie() { IndexValue = login, user_id = user.Id, Domain = site.Root });
                             }
 
-                            this.Context.Send("Desktop.Open", new WebMeta("title", caption, "id", site.Root, "text", "多账户对接")
-                                .Put("src", String.Format("{0}://{1}{2}{3}/?$=New", request.Url.Scheme, site.Root, union, home
+                            this.Context.Send("Desktop.Open", new WebMeta("title", site.Caption, "id", site.Root, "text", "多账户对接")
+                                .Put("src", String.Format("{0}://{1}{2}{3}/UMC.Login/New", request.Url.Scheme, site.Root, union, home
                                  , login)).Put("max", true), true);
                         }
                     }
                     break;
                 case "Delete":
                     {
-                        var ls = DataFactory.Instance().Cookies(site.Root, this.Context.Token.UId.Value)
+                        var ls = DataFactory.Instance().Cookies(site.Root, this.Context.Token.UserId.Value)
                             .Where(r => String.IsNullOrEmpty(r.Account) == false).ToArray();
                         if (ls.Length == 0)
                         {
@@ -342,22 +445,37 @@ namespace UMC.Proxy.Activities
                                 {
                                     if (String.IsNullOrEmpty(c.Account) == false && c.IndexValue != 0)
                                     {
-                                        dc.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(k, c.IndexValue)) { Text = c.Account }.Send(request.Model, request.Command));
+                                        dc.Put(c.Account, c.IndexValue.ToString());
                                     }
                                 }
                                 return dc;
                             }
                         }), 0);
-                        //var user = this.Context.Token.Identity(); // UMC.Security.Identity.Current;//.Id.Value
-                        UMC.Data.DataFactory.Instance().Delete(new Password { Key = SiteConfig.MD5Key(site.Root, this.Context.Token.UId.Value, indexValue) });
-                        DataFactory.Instance().Delete(new Cookie { user_id = this.Context.Token.UId.Value, Domain = site.Root, IndexValue = indexValue });
+                        UMC.Data.DataFactory.Instance().Delete(new Password { Key = SiteConfig.MD5Key(site.Root, this.Context.Token.UserId.Value, indexValue) });
+                        DataFactory.Instance().Delete(new Cookie { user_id = this.Context.Token.UserId.Value, Domain = site.Root, IndexValue = indexValue });
 
                         this.Prompt(String.Format("解除账户绑定成功", site.Caption));
                     }
                     break;
+                case "Setting":
+                    if (site != null)
+                    {
+                        if (request.IsMaster == false)
+                        {
+                            var rols = UMC.Data.DataFactory.Instance().Roles(this.Context.Token.UserId.Value, site.SiteKey.Value);
+                            if (rols.Contains(UMC.Security.Membership.AdminRole) == false)
+                            {
+                                this.Prompt("应用管理的需要应用管理员权限");
+                            }
+
+                        }
+                        this.Context.Send("Desktop.Open", new WebMeta("title", site.Caption + "设置", "id", site.Root, "text", "应用账户")
+                            .Put("src", $"/Setting/{site.SiteKey.Value}").Put("max", true), true);
+                    }
+                    break;
                 case "Password":
                     {
-                        var ls = DataFactory.Instance().Cookies(site.Root, this.Context.Token.UId.Value)
+                        var ls = DataFactory.Instance().Cookies(site.Root, this.Context.Token.UserId.Value)
                                .Where(r => String.IsNullOrEmpty(r.Account) == false).ToArray();
                         if (ls.Length == 0)
                         {
@@ -371,16 +489,16 @@ namespace UMC.Proxy.Activities
                             {
                                 if (String.IsNullOrEmpty(c.Account) == false)
                                 {
-                                    dc.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(k, c.IndexValue)) { Text = c.Account }.Send(request.Model, request.Command));
+                                    dc.Put(c.Account, c.IndexValue.ToString());// new UIClick(new WebMeta(request.Arguments).Put(k, c.IndexValue)) { Text = c.Account }.Send(request.Model, request.Command));
                                 }
                             }
-                            if (dc.Options.Count < 2)
+                            if (dc.Count < 2)
                             {
                                 return this.DialogValue(ls[0].IndexValue.ToString());
                             }
                             return dc;
                         }), 0);
-                        var cookie = UMC.Data.DataFactory.Instance().Password(SiteConfig.MD5Key(site.Root, this.Context.Token.UId.Value, indexValue));
+                        var cookie = UMC.Data.DataFactory.Instance().Password(SiteConfig.MD5Key(site.Root, this.Context.Token.UserId.Value, indexValue));
                         if (String.IsNullOrEmpty(cookie) == false)
                         {
                             this.Context.Send("Clipboard", new WebMeta().Put("text", cookie), true);

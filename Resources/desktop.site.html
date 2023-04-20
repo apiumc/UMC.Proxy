@@ -2,7 +2,7 @@
 <html>
 
 <head>
-    <title>API UMC</title>
+    <title>应用设置</title>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1">
     <link href="/css/weui.css" rel="stylesheet" type="text/css" />
@@ -72,7 +72,7 @@
 
                 });
 
-              
+
                 $(window).on('message', function (e) {
                     var data = {};
                     try {
@@ -122,13 +122,40 @@
                 }).on('fullscreenchange,webkitfullscreenchange,mozfullscreenchange', function () {
                     $(document.body).cls('umc-fullscreen', document.fullScreen || document.mozFullScreen || document.webkitIsFullScreen);
                 });
-                $.SPA = '/Desktop/';
-                var key = location.pathname.substring($.SPA.length);
-                $.page(location.pathname.substring($.SPA.length),false);
-                UMC.shift('main', key);
-                $(window).on('popstate');
 
-               
+
+                var key = location.pathname.substring(9);
+                $.page('proxy/org', false).page('proxy/auth', false).page('proxy/menu', false);
+
+                window.top.postMessage(JSON.stringify({
+                    type: 'nav',
+                    value: [{
+                        click: {
+                            key: 'Url',
+                            send: '#proxy/org?Site=' + key
+                        }, text: '应用账户'
+                    }, {
+                        click: {
+                            key: 'Url',
+                            send: '#proxy/auth?Site=' + key
+                        }, text: '应用授权'
+                    }, {
+                        click: {
+                            key: 'Url',
+                            send: '#proxy/menu?Site=' + key
+                        }, text: '应用菜单'
+                    }, {
+                        click: {
+                            model: 'Proxy',
+                            cmd: 'Site',
+                            send: key
+                        }, text: '应用配置'
+                    }]
+                }), "*");
+
+                $(window).on('page', 'proxy/org', 'Site=' + key)
+
+
             });
 
         })(UMC);</script>

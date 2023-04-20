@@ -9,7 +9,6 @@ using System.Text;
 using System.Linq;
 using UMC.Web;
 using UMC.Net;
-
 namespace UMC.Proxy.Extends
 {
 
@@ -22,11 +21,8 @@ namespace UMC.Proxy.Extends
             var key = hashtable["key"] as Hashtable;
             return UMC.Data.Utility.Hex(UMC.Data.Utility.RSA(key["n"] as string, key["e"] as string, passwrod));
         }
-        //Guid AppKey;
-        public override string[] OutputCookies => new string[] { "XSRF-TOKEN" };
         public override bool Proxy(HttpProxy proxy)
         {
-            //this.AppKey = UMC.Security.Principal.Current.AppKey ?? Guid.Empty;
             if (proxy.RawUrl.StartsWith("/t/"))
             {
                 Chart(proxy);
@@ -51,7 +47,7 @@ namespace UMC.Proxy.Extends
                     var result = UMC.Data.JSON.Deserialize(kko) as Hashtable;
                     var publicKey = result["result"] as Hashtable;
                     var Value = new WebMeta();
-                    //UMC.Security.Principal.Create(this.AppKey);
+
                     proxy.ShareUser();
                     Value.Put("username", proxy.SiteCookie.Account, "encryptedPassword", encryptedPassword(publicKey, proxy.Password), "keyId", publicKey["keyId"] as string);
 
@@ -126,6 +122,7 @@ namespace UMC.Proxy.Extends
             re.ReadAsString(Result =>
             {
                 var webResource = proxy.WebResource;
+
                 var cdnKey = proxy.MD5(proxy.Site.Caption);
 
                 var regex = new System.Text.RegularExpressions.Regex("(?<key>\\shref|\\ssrc)=\"(?<src>[^\"]+)\"");
@@ -187,15 +184,14 @@ namespace UMC.Proxy.Extends
 
         void getSessionInfo(HttpProxy proxy)
         {
-
-            //var webReq = proxy.Context.Transfer(new Uri(proxy.Domain, "/vizportal/api/web/v1/getSessionInfo"), proxy.Cookies);
             var webReq = proxy.Reqesut(proxy.Context.Transfer(new Uri(proxy.Domain, "/vizportal/api/web/v1/getSessionInfo"), proxy.Cookies));
             var cookie = proxy.Cookies.GetCookie("XSRF-TOKEN");
             if (cookie != null)
             {
                 webReq.Headers["X-XSRF-TOKEN"] = cookie.Value;
             }
-            webReq.Post(new StringContent("{\"method\":\"getSessionInfo\",\"params\":{}}", UTF8Encoding.UTF8, "application/json"), re =>
+            webReq.ContentType = "application/json";
+            webReq.Post("{\"method\":\"getSessionInfo\",\"params\":{}}", re =>
             {
                 switch (re.StatusCode)
                 {
@@ -208,14 +204,14 @@ namespace UMC.Proxy.Extends
                                 webReq.Headers["X-XSRF-TOKEN"] = cookie.Value;
                             }
 
-                            webReq.Post(new System.Net.Http.StringContent("{\"method\":\"getSessionInfo\",\"params\":{}}", UTF8Encoding.UTF8, "application/json"), res =>
-                            {
-                                res.Transfer(proxy.Context);
-                            });
+                            webReq.Post("{\"method\":\"getSessionInfo\",\"params\":{}}", res =>
+                           {
+                               proxy.Response(res);
+                           });
                         });
                         break;
                     default:
-                        re.Transfer(proxy.Context);
+                        proxy.Response(re);
                         break;
                 }
             });

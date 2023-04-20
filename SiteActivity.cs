@@ -9,6 +9,8 @@ using UMC.Data.Entities;
 using UMC.Web.UI;
 using UMC.Proxy.Entities;
 using System.Security.Cryptography;
+using UMC.Security;
+using UMC.Data;
 
 namespace UMC.Proxy.Activities
 {
@@ -16,26 +18,36 @@ namespace UMC.Proxy.Activities
     /// 应用管理
     /// </summary>
     [UMC.Web.Mapping("Proxy", "Site", Auth = WebAuthType.User)]
-    class SiteActivity : WebActivity
+    public class SiteActivity : WebActivity
     {
-        public void Create()
+        void Create()
         {
-
-            if (DataFactory.Instance().IsRegister() == false)
+            var type = this.AsyncDialog("Type", g =>
             {
-                this.Prompt("请先注册，再来新增应用");
-            }
+                return new Web.UISheetDialog() { Title = "新增类型" }
+                .Put("Web应用", "Http").Put("文件系统", "File");
+            });
 
             var config = this.AsyncDialog("Config", g =>
             {
-                var home = DataFactory.Instance().WebDomain();
-                var union = Data.WebResource.Instance().Provider["union"] ?? ".";
                 var from = new Web.UIFormDialog() { Title = "新增应用" };
                 from.AddText("应用标识", "Root", String.Empty).PlaceHolder("[a-z0-9]全小写字符");
-                from.AddText("应用名称", "Caption", String.Empty).Put("tip", $"将以*{union}{home}域名访问");
-                from.AddText("应用网址", "Domain", String.Empty);
-                from.AddCheckBox("", "AuthConf", "none").Put("仅作为反向代理", "*", true);
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.AddText("应用名称", "Caption", String.Empty).Put("tip", $"将以[标识]为前缀合成域名来访问");
+                switch (type)
+                {
+                    default:
+                    case "Http":
+                        from.Title = "新增Web应用";
+                        from.AddText("应用网址", "Domain", String.Empty);
+                        // from.AddCheckBox("", "AuthConf", "none").Put("仅作为反向代理", "*", true);
+                        break;
+                    case "File":
+                        from.Title = "新增静态应用";
+                        from.AddOption("应用目录", "Domain", String.Empty, String.Empty).Command("System", "Dir", new WebMeta().Put("type", "Dir").Put("Key", "Domain"));
+                        from.AddCheckBox("", "AuthConf", "none").Put("支持目录浏览", "*", true);
+                        break;
+                }
+                from.Submit("确认", "Site.Config");
                 return from;
             });
 
@@ -46,16 +58,41 @@ namespace UMC.Proxy.Activities
                 this.Prompt("应用标识只支持【a-z0-9】字符");
             }
             site.Caption = config["Caption"];
-            var Domain = new Uri(config["Domain"]);
+            Uri Domain;
+            try
+            {
+                Domain = new Uri(config["Domain"]);
+            }
+            catch
+            {
+                this.Prompt("应用网址格式不正确");
+                return;
+            }
             var key = Domain.PathAndQuery.Substring(1);
 
             site.SiteKey = UMC.Data.Utility.IntParse(UMC.Data.Utility.Guid(site.Root, true).Value);
 
-            site.Domain = new Uri(Domain, "/").AbsoluteUri;
-            if (config["AuthConf"].Contains("*"))
+            switch (Domain.Scheme)
             {
-                site.AuthConf = "*";
-                site.Host = "*";
+                case "http":
+                case "https":
+                    site.Domain = new Uri(Domain, "/").AbsoluteUri;
+
+                    site.AuthConf = "*";
+
+                    // AuthCon
+                    break;
+                case "file":
+                    site.Domain = Domain.AbsoluteUri.TrimEnd('/');
+
+                    if (config["AuthConf"].Contains("*"))
+                    {
+                        site.Domain += "/";
+                    }
+                    break;
+                default:
+                    this.Prompt("网址格式不支持");
+                    break;
             }
             site.AuthType = WebAuthType.All;
             site.IsDesktop = true;
@@ -82,9 +119,16 @@ namespace UMC.Proxy.Activities
             }
             else
             {
+
+                String webrkey = String.Format("images/{0}/{1}/{2}.png", Data.Utility.Guid(site.Root, true), 1, 0);
+                using (System.IO.Stream stream = typeof(WebServlet).Assembly//UMC.Proxy
+                                        .GetManifestResourceStream("UMC.Proxy.Resources.app.png"))
+                {
+                    WebResource.Instance().Transfer(stream, webrkey);
+                }
                 DataFactory.Instance().Put(site);
             }
-            this.Prompt("应用注册成功", false);
+            this.Prompt("新增应用成功", false);
             this.Context.Send("Site.Config", true);
         }
         public void AdminConf(Site site)
@@ -94,7 +138,7 @@ namespace UMC.Proxy.Activities
                 var from = new Web.UIFormDialog() { Title = "应用管理员" };
                 from.AddTextarea("账户名称", "AdminConf", site.AdminConf);
                 from.AddPrompt("多个用换行、空格或逗号符分割");
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.Submit("确认", "Site.Config");
                 return from;
             });
             String OutputCookie = config["AdminConf"];
@@ -110,16 +154,13 @@ namespace UMC.Proxy.Activities
             var config = this.AsyncDialog("Config", g =>
             {
                 var from = new Web.UIFormDialog() { Title = "透传会话" };
-                from.AddTextarea("Cookie名称", "OutputCookie", site.OutputCookies).PlaceHolder("Cookie的名称");
+                from.AddTextarea("Cookie名称", "OutputCookie", site.OutputCookies).PlaceHolder("Cookie的名称").NotRequired();
                 from.AddPrompt("多个用换行、空格或逗号符分割，用*表示透传所有Cookie");
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.Submit("确认", "Site.Config");
                 return from;
             });
-            String OutputCookie = config["OutputCookie"];
-            if (OutputCookie == "none")
-            {
-                OutputCookie = String.Empty;
-            }
+            String OutputCookie = config["OutputCookie"] ?? String.Empty;
+
             DataFactory.Instance().Put(new Site { OutputCookies = OutputCookie, Root = site.Root });
             this.Context.Send("Site.Config", true);
         }
@@ -136,7 +177,6 @@ namespace UMC.Proxy.Activities
             }
             DataFactory.Instance().Put(new Site { Flag = -1, Root = site.Root });
 
-            DataFactory.Instance().Delete(new SiteConfig { Root = site.Root });
             this.Context.Send("Site.Config", true);
         }
 
@@ -147,7 +187,8 @@ namespace UMC.Proxy.Activities
                 var from = new Web.UIFormDialog() { Title = "新增应用目录" };
                 from.AddText("目录", "Path", String.Empty).PlaceHolder("以/开始的路径");
                 from.AddText("应用", "Value", String.Empty);
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.Submit("确认", "Site.Config");
+                from.AddPrompt("当目录最后为字符为“*”时,表示取后面的路径为子应用的请求路径");
                 return from;
             });
             var Key = config["Path"];
@@ -185,10 +226,10 @@ namespace UMC.Proxy.Activities
         {
             var config = this.AsyncDialog("TimeOut", g =>
             {
-                var from = new Web.UIFormDialog() { Title = "应用时效设置" };
+                var from = new Web.UIFormDialog() { Title = "应用时效" };
                 from.AddNumber("请求超时", "Timeout", site.Timeout).PlaceHolder("单位为秒，默认100秒");
                 from.AddNumber("登录过期", "AuthExpire", site.AuthExpire).PlaceHolder("单位为分,默认30分钟");
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.Submit("确认", "Site.Config");
                 return from;
             });
             var Timeout = UMC.Data.Utility.IntParse(config["Timeout"], 100);
@@ -209,7 +250,7 @@ namespace UMC.Proxy.Activities
                 from.AddTextarea("请求头配置", "HeaderConf", site.HeaderConf).PlaceHolder("字典配置格式").Put("Rows", 8);
                 from.AddPrompt("将会追加请求的Header上，当值为HOST、SCHEME、ADDRESS将会分别替换成当前值");
 
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.Submit("确认", "Site.Config");
                 return from;
             });
             var HostReConf = config["HeaderConf"];
@@ -226,7 +267,7 @@ namespace UMC.Proxy.Activities
                 from.AddTextarea("转化路径", "HostReConf", site.HostReConf).PlaceHolder("字典配置格式").Put("Rows", 8);
                 from.AddPrompt("值可为rp、rm、in、cdn、CDN，其中rp表示替换域名、rm表示移除域名、in表示提交内容域名转化，cdn表示静态资源加速，CDN表示以资源标签加速");
 
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.Submit("确认", "Site.Config");
                 return from;
             });
             var HostReConf = config["HostReConf"];
@@ -243,7 +284,7 @@ namespace UMC.Proxy.Activities
                 from2.AddTextarea("触发登录页面", "LogoutPath", site.LogoutPath as string).Put("Rows", 5);
 
                 from2.AddPrompt("结尾是“$”则表示从后比对，多项用换行、空格或逗号符分割");
-                from2.Submit("确认", this.Context.Request, "Site.Config");
+                from2.Submit("确认", "Site.Config");
                 return from2;
             });
 
@@ -261,24 +302,23 @@ namespace UMC.Proxy.Activities
                 var from = new Web.UIFormDialog() { Title = "应用设置" };
                 from.AddText("应用名称", "Caption", site.Caption);
                 from.AddText("应用主页", "Home", site.Home).NotRequired();
-                //from.AddText("移动主页", "MobileHome", site.MobileHome).NotRequired();
+                from.AddText("移动主页", "MobileHome", site.MobileHome).NotRequired();
                 from.AddText("缓存版本", "Version", site.Version).NotRequired();
 
 
                 var userBrowser = site.UserBrowser ?? Entities.UserBrowser.All;
                 from.AddCheckBox("支持浏览器", "UserBrowser", "All")
-                .Put("谷歌浏览器", "Chrome", (userBrowser & UserBrowser.Chrome) == UserBrowser.Chrome)
-                .Put("IE浏览器", "IE", (userBrowser & UserBrowser.IE) == UserBrowser.IE)
-                //.Put("Opera", "Opera", (userBrowser & UserBrowser.Opera) == UserBrowser.Opera)
-                .Put("火狐浏览器", "Firefox", (userBrowser & UserBrowser.Firefox) == UserBrowser.Firefox)
-                .Put("WebKit内核浏览器", "WebKit", (userBrowser & UserBrowser.WebKit) == UserBrowser.WebKit)
+                .Put("IE", "IE", (userBrowser & UserBrowser.IE) == UserBrowser.IE)
+                .Put("谷歌", "Chrome", (userBrowser & UserBrowser.Chrome) == UserBrowser.Chrome)
+                .Put("火狐", "Firefox", (userBrowser & UserBrowser.Firefox) == UserBrowser.Firefox)
                 .Put("钉钉", "Dingtalk", (userBrowser & UserBrowser.Dingtalk) == UserBrowser.Dingtalk)
-                .Put("微信", "WeiXin", (userBrowser & UserBrowser.WeiXin) == UserBrowser.WeiXin);
+                .Put("微信", "WeiXin", (userBrowser & UserBrowser.WeiXin) == UserBrowser.WeiXin)
+                .Put("WebKit", "WebKit", (userBrowser & UserBrowser.WebKit) == UserBrowser.WebKit);
 
 
 
 
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.Submit("确认", "Site.Config");
                 return from;
             });
             var Home = config["Home"];
@@ -298,7 +338,6 @@ namespace UMC.Proxy.Activities
             }
 
             var version = config["Version"];
-            //UMC.Data.Utility
             if (String.IsNullOrEmpty(version) == false)
             {
                 if (System.Text.RegularExpressions.Regex.IsMatch(version, "^[\\.0-9]+$") == false)
@@ -315,7 +354,6 @@ namespace UMC.Proxy.Activities
                 Caption = config["Caption"],
                 Home = Home,
                 Version = version,
-                //MobileHome = MobileHome,
                 Root = site.Root
             };
             var userBrowser2 = UserBrowser.All;
@@ -327,24 +365,58 @@ namespace UMC.Proxy.Activities
             DataFactory.Instance().Put(confgiSite);
             this.Context.Send("Site.Config", true);
         }
-        public void Setting(Site site)
+        void AppSecret(Site site)
+        {
+            var config = this.AsyncDialog("AppSecret", g =>
+            {
+                var from = new Web.UISheetDialog() { Title = "应用安全码" };
+                from.Put("显示", "View");
+                from.Put("设置", "Reset");
+                from.Put("随机", "Round");
+                return from;
+            });
+            switch (config)
+            {
+
+                case "Round":
+                    site.AppSecret = Utility.Guid(Guid.NewGuid());
+                    DataFactory.Instance().Put(new Site { Root = site.Root, AppSecret = site.AppSecret });
+                    this.Prompt("应用安全码", "AppSecret：" + site.AppSecret);
+                    break;
+                case "Reset":
+                    var Value = this.AsyncDialog("Value", g =>
+                    {
+                        return new Web.UITextDialog() { Title = "设置安全码" };
+
+
+                    });
+                    DataFactory.Instance().Put(new Site { Root = site.Root, AppSecret = Value });
+                    break;
+                default:
+                    this.Prompt("应用安全码", "AppSecret：" + site.AppSecret);
+                    break;
+            }
+            //site.AppSecret
+        }
+
+        void Setting(Site site)
         {
             var config = this.AsyncDialog("Config", g =>
             {
                 var from = new Web.UIFormDialog() { Title = "应用设置" };
-
-
-                from.AddRadio("授权", "AuthType")
+                from.AddRadio("访问许可", "AuthType")
                 .Put("所有人", "All", site.AuthType == WebAuthType.All)
+                .Put("匿名检查", "Check", site.AuthType == WebAuthType.Check)
                 .Put("登录人员", "Guest", site.AuthType == WebAuthType.Guest)
                 .Put("内部用户", "User", site.AuthType == WebAuthType.User)
+                .Put("用户检查", "UserCheck", site.AuthType == WebAuthType.UserCheck)
                 .Put("管理员", "Admin", site.AuthType == WebAuthType.Admin);
-
 
                 from.AddCheckBox("设置", "Setings", "0")
                 .Put("桌面展示", "IsDesktop", site.IsDesktop == true)
                 .Put("隐藏应用", "IsModule", site.IsModule == true)
-                .Put("开启日志", "IsDebug", site.IsDebug == true);
+                .Put("开启日志", "IsDebug", site.IsDebug == true)
+                .Put("强化验证", "IsAuth", site.IsAuth == true);
 
 
                 from.AddRadio("打开方式", "OpenModel")
@@ -354,16 +426,17 @@ namespace UMC.Proxy.Activities
                 .Put("快捷方式", "3", site.OpenModel == 3);
 
 
-                from.Submit("确认", this.Context.Request, "Site.Config");
+
+                from.Submit("确认", "Site.Config");
                 return from;
             });
             var confgiSite = new Site
             {
-                //HelpKey = config["HelpKey"],
                 OpenModel = UMC.Data.Utility.Parse(config["OpenModel"], 0),
                 IsModule = false,
                 IsDebug = false,
                 IsDesktop = false,
+                IsAuth = true,
                 AuthType = UMC.Data.Utility.Parse(config["AuthType"], UMC.Web.WebAuthType.User),
                 Root = site.Root
             };
@@ -381,6 +454,9 @@ namespace UMC.Proxy.Activities
                     case "IsDebug":
                         confgiSite.IsDebug = true;
                         break;
+                    case "IsAuth":
+                        confgiSite.IsAuth = true;
+                        break;
                 }
             }
             DataFactory.Instance().Put(confgiSite);
@@ -388,7 +464,7 @@ namespace UMC.Proxy.Activities
         }
         string MD5(String src)
         {
-            var md5 = new System.Security.Cryptography.MD5CryptoServiceProvider();
+            var md5 = System.Security.Cryptography.MD5.Create();
             byte[] md = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(src));
             return UMC.Data.Utility.Parse36Encode(UMC.Data.Utility.IntParse(md));
         }
@@ -421,7 +497,7 @@ namespace UMC.Proxy.Activities
                 from.AddText("共享账户", "Account", site.Account).PlaceHolder("多账户可用|和~分割");
 
                 from.AddText("共同密码", "Password", String.Empty);
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.Submit("确认", "Site.Config");
                 return from;
             });
             var acount = config["Account"];
@@ -444,19 +520,13 @@ namespace UMC.Proxy.Activities
         {
             var config = this.AsyncDialog("HostModel", g =>
             {
-                var from = new Web.UISheetDialog() { Title = "域名反代方式" };
-                var arg = this.Context.Request.Arguments;
-                var m = this.Context.Request.Model;
-                var c = this.Context.Request.Command;
-                from.Options.Add(new UIClick(new WebMeta(arg).Put(g, "Select")) { Text = "登录页选择" }.Send(m, c));
-                from.Options.Add(new UIClick(new WebMeta(arg).Put(g, "Login")) { Text = "登录页跳转" }.Send(m, c));
-                from.Options.Add(new UIClick(new WebMeta(arg).Put(g, "Check")) { Text = "浏览器中跳转" }.Send(m, c));
-
-                from.Options.Add(new UIClick(new WebMeta(arg).Put(g, "Disable")) { Text = "全域名跳转" }.Send(m, c));
+                var from = new Web.UISheetDialog() { Title = "认证切换模式" };
+                from.Put("不切换", "None").Put("登录页切换", "Login").Put("浏览器中切换", "Check")
+                .Put("全域名切换", "Disable");
 
                 return from;
             });
-            var acount = UMC.Data.Utility.Parse(config, HostModel.Select);
+            var acount = UMC.Data.Utility.Parse(config, HostModel.None);
             DataFactory.Instance().Put(new Site
             {
                 HostModel = acount,
@@ -469,15 +539,13 @@ namespace UMC.Proxy.Activities
             var config = this.AsyncDialog("UserModel", g =>
             {
                 var from = new Web.UISheetDialog() { Title = "设置账户模式" };
+
+                from.Put("标准模式", "Standard").Put("桥接模式", "Bridge");
                 var arg = this.Context.Request.Arguments;
                 var m = this.Context.Request.Model;
                 var c = this.Context.Request.Command;
-                from.Options.Add(new UIClick(new WebMeta(arg).Put(g, "Standard")) { Text = "标准模式" }.Send(m, c));
-
-                //from.Options.Add(new UIClick(new WebMeta(arg).Put(g, "More")) { Text = "多账户模式" }.Send(m, c));
-                from.Options.Add(new UIClick(new WebMeta(arg).Put(g, "Bridge")) { Text = "桥接模式" }.Send(m, c));
-                from.Options.Add(new UIClick(new WebMeta(arg).Put("Model", "Quote")) { Text = "引用模式" }.Send(m, c));
-                from.Options.Add(new UIClick(new WebMeta(arg).Put("Model", "Share")) { Text = "共享模式" }.Send(m, c));
+                from.Put(new UIClick(new WebMeta(arg).Put("Model", "Quote")) { Text = "引用模式" }.Send(m, c));
+                from.Put(new UIClick(new WebMeta(arg).Put("Model", "Share")) { Text = "共享模式" }.Send(m, c));
 
 
                 return from;
@@ -506,9 +574,6 @@ namespace UMC.Proxy.Activities
                     case UserModel.Bridge:
                         m = "桥接模式";
                         break;
-                    //case UserModel.More:
-                    //    m = "多账户模式";
-                    //    break;
                     case UserModel.Share:
                         m = "共享模式";
                         break;
@@ -525,7 +590,7 @@ namespace UMC.Proxy.Activities
                 from.AddTextValue().Put("当前模式", m);
 
                 from.AddText("引用应用", "Account", ak);
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.Submit("确认", "Site.Config");
                 return from;
             });
             var acount = config["Account"];
@@ -558,30 +623,6 @@ namespace UMC.Proxy.Activities
             });
             this.Context.Send("Site.Config", true);
         }
-        public void Webhook(Site site)
-        {
-            var config = this.AsyncDialog("Config", g =>
-            {
-                var from = new Web.UIFormDialog() { Title = "异常机器人" };
-                from.AddText("Webhook", "Webhook", site.Webhook);
-                from.AddText("Secret", "WebhookSecret", site.WebhookSecret);
-                from.Submit("确认", this.Context.Request, "Site.Config");
-                return from;
-            });
-            var Webhook = config["Webhook"];
-            var WebhookSecret = config["WebhookSecret"];
-
-            var site2 = new Site()
-            {
-                Root = site.Root,
-                Webhook = Webhook,
-                WebhookSecret = WebhookSecret
-            };
-
-            DataFactory.Instance().Put(site2);
-
-            this.Context.Send("Site.Config", true);
-        }
         public void Account(Site site)
         {
             var config = this.AsyncDialog("Config", g =>
@@ -589,7 +630,7 @@ namespace UMC.Proxy.Activities
                 var from = new Web.UIFormDialog() { Title = "检测账户" };
                 from.AddText("账户名称", "Account", site.Account);
                 from.AddText("账户密码", "Password", String.Empty).NotRequired();
-                from.Submit("确认", this.Context.Request, "Mime.Config");
+                from.Submit("确认", "Mime.Config");
                 return from;
             });
             var acount = config["Account"];
@@ -618,7 +659,7 @@ namespace UMC.Proxy.Activities
                 from.AddText("新标识", "Root", String.Empty).PlaceHolder("[a-z0-9]全小写字符");
 
                 from.AddText("新名称", "Caption", site.Caption);
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.Submit("确认", "Site.Config");
                 return from;
             });
             var newRoot = config["Root"].ToLower();
@@ -645,12 +686,12 @@ namespace UMC.Proxy.Activities
             foreach (var key in jsPaths)
             {
                 var md5Key = MD5(key as string);
-                var jsKey = String.Format("SITE_JS_CONFIG_{0}{1}", site.Root, md5Key).ToUpper();//).Send(request.Model, "Conf"));
+                var jsKey = String.Format("SITE_JS_CONFIG_{0}{1}", site.Root, md5Key).ToUpper();
 
                 var pconfig = UMC.Data.DataFactory.Instance().Config(jsKey);
                 if (pconfig != null)
                 {
-                    pconfig.ConfKey = String.Format("SITE_JS_CONFIG_{0}{1}", newRoot, md5Key).ToUpper();//).Send(request.Model, "Conf"));
+                    pconfig.ConfKey = String.Format("SITE_JS_CONFIG_{0}{1}", newRoot, md5Key).ToUpper();
                     UMC.Data.DataFactory.Instance().Put(pconfig);
                 }
             }
@@ -666,6 +707,13 @@ namespace UMC.Proxy.Activities
             site.Caption = config["Caption"];
             site.SiteKey = UMC.Data.Utility.IntParse(UMC.Data.Utility.Guid(newRoot, true).Value);
             DataFactory.Instance().Put(site);
+
+            String webrkey = String.Format("images/{0}/{1}/{2}.png", Data.Utility.Guid(site.Root, true), 1, 0);
+            using (System.IO.Stream stream = typeof(WebServlet).Assembly
+                                    .GetManifestResourceStream("UMC.Proxy.Resources.app.png"))
+            {
+                WebResource.Instance().Transfer(stream, webrkey);
+            }
 
             this.Prompt("应用复制成功", false);
             this.Context.Send("Site.Config", true);
@@ -717,69 +765,160 @@ namespace UMC.Proxy.Activities
 
             var Key = this.AsyncDialog("Key", g =>
             {
-
-                var sts = new System.Data.DataTable();
-                sts.Columns.Add("id");
-                //sts.Columns.Add("icon");
-                sts.Columns.Add("name");
-                sts.Columns.Add("root");
-                sts.Columns.Add("domain");
-                sts.Columns.Add("module");
-                sts.Columns.Add("auth");
-                var keys = new List<String>();
-                var ds = DataFactory.Instance().Site();
-
-                var Keyword = (request.SendValues ?? request.Arguments)["Keyword"];
-                if (String.IsNullOrEmpty(Keyword) == false)
+                var form = request.SendValues ?? new WebMeta();
+                var limit = form["limit"] ?? "none";
+                switch (limit)
                 {
+                    case "PC":
+                        {
+                            var sts = new System.Data.DataTable();
+                            sts.Columns.Add("id");
+                            sts.Columns.Add("name");
+                            sts.Columns.Add("root");
+                            sts.Columns.Add("domain");
+                            sts.Columns.Add("module");
+                            sts.Columns.Add("auth");
+                            var ds = DataFactory.Instance().Site();
 
-                    ds = ds.Where(r => r.Caption.Contains(Keyword) || r.Root.Contains(Keyword) || r.Domain.Contains(Keyword)).Where(r => r.Flag != -1).OrderBy(r => r.Caption).ToArray();
+                            var Keyword = form["Keyword"];
+                            if (String.IsNullOrEmpty(Keyword) == false)
+                            {
+
+                                ds = ds.Where(r => r.Caption.Contains(Keyword) || r.Root.Contains(Keyword) || r.Domain.Contains(Keyword)).Where(r => r.Flag != -1).OrderBy(r => r.Caption).ToArray();
+                            }
+                            else
+                            {
+
+                                ds = ds.Where(r => r.Flag != -1).OrderBy(r => r.Caption).ToArray();
+                            }
+                            foreach (var d in ds)
+                            {
+                                var dtype = "桌面展示";
+                                if (d.IsModule == true)
+                                {
+                                    dtype = "应用隐藏";
+                                }
+                                else if (d.IsDesktop ?? false == false)
+                                {
+                                    dtype = "桌面展示";
+                                }
+                                var Domain = d.Domain ?? ""; ;
+                                sts.Rows.Add(d.SiteKey ?? UMC.Data.Utility.IntParse(UMC.Data.Utility.Guid(d.Root, true).Value), d.Caption, d.Root, (Domain.IndexOf(',') > 0 || Domain.IndexOf('\n') > 0) ? "多例均衡" : Domain, dtype, d.AuthType ?? Web.WebAuthType.All);
+
+                            }
+
+                            var rdata = new WebMeta().Put("data", sts);
+                            response.Redirect(request.IsMaster ? rdata.Put("IsMaster", true) : rdata);
+                        }
+                        break;
+                    case "none":
+                        this.Context.Send(new UISectionBuilder(request.Model, request.Command, request.Arguments)
+                            .RefreshEvent($"{request.Model}.{request.Command}")
+                                .Builder(), true);
+                        break;
+                    default:
+                        {
+                            var title = UITitle.Create();
+
+                            title.Title = "应用网关";
+                            if (request.IsMaster && request.IsApp)
+                            {
+                                title.Right(new UIEventText("新增").Click(new UIClick(new WebMeta(request.Arguments).Put(g, "Create")).Send(request.Model, request.Command)));
+
+                            }
+                            var ds = DataFactory.Instance().Site();
+
+                            var Keyword = form["Keyword"];
+                            if (String.IsNullOrEmpty(Keyword) == false)
+                            {
+
+                                ds = ds.Where(r => r.Caption.Contains(Keyword) || r.Root.Contains(Keyword) || r.Domain.Contains(Keyword)).Where(r => r.Flag != -1).OrderBy(r => r.Caption).ToArray();
+                            }
+                            else
+                            {
+
+                                ds = ds.Where(r => r.Flag != -1).OrderBy(r => r.Caption).ToArray();
+                            }
+
+                            var ui = UISection.Create(new UIHeader().Search("搜索"), title);
+                            var webr = UMC.Data.WebResource.Instance();
+
+                            foreach (var d in ds)
+                            {
+                                var cell = new UIImageTextValue(webr.ImageResolve(Data.Utility.Guid(d.Root, true).Value, "1", 4), d.Caption, d.Root);
+                                cell.Click(new UIClick(new WebMeta().Put(g, d.Root)).Send(request.Model, request.Command));
+
+                                cell.Style.Name("image-width", 72);
+                                cell.Style.Name("image-radius", 10);
+                                ui.Add(cell);
+                            }
+                            if (ds.Length == 0)
+                            {
+                                if (String.IsNullOrEmpty(Keyword))
+                                {
+                                    var desc = new UIDesc("未有托管的应用，请新增");
+                                    desc.Put("icon", "\uf0e8").Format("desc", "{icon}\n{desc}");
+                                    desc.Style.Align(1).Color(0xaaa).Padding(20, 20).BgColor(0xfff).Size(12).Name("icon", new UIStyle().Font("wdk").Size(60));
+                                    ui.Add(desc);
+                                }
+                                else
+                                {
+                                    var desc = new UIDesc($"未搜索到“{Keyword}”对应的应用");
+                                    desc.Put("icon", "\uf0e8").Format("desc", "{icon}\n{desc}");
+                                    desc.Style.Align(1).Color(0xaaa).Padding(20, 20).BgColor(0xfff).Size(12).Name("icon", new UIStyle().Font("wdk").Size(60));
+                                    ui.Add(desc);
+                                }
+                            }
+                            if (request.IsMaster)
+                            {
+                                ui.UIFootBar = new UIFootBar() { IsFixed = true };
+                                ui.UIFootBar.AddText(new UIEventText("加载日志").Click(new UIClick(new WebMeta(request.Arguments).Put(g, "LogSetting")).Send(request.Model, request.Command)),
+                                 new UIEventText("新增应用").Click(new UIClick(new WebMeta(request.Arguments).Put(g, "Reload")).Send(request.Model, request.Command)).Style(new UIStyle().BgColor()));
+                            }
+                            response.Redirect(ui);
+                        }
+                        break;
                 }
-                else
-                {
 
-                    ds = ds.Where(r => r.Flag != -1).OrderBy(r => r.Caption).ToArray();
-                }
-                foreach (var d in ds)
-                {
-                    var dtype = "桌面展示";
-                    if (d.IsModule == true)
-                    {
-                        dtype = "应用隐藏";
-                    }
-                    else if (d.IsDesktop ?? false == false)
-                    {
-                        dtype = "桌面展示";
-                    }
-                    var Domain = d.Domain ?? ""; ;
-                    sts.Rows.Add(d.SiteKey ?? UMC.Data.Utility.IntParse(UMC.Data.Utility.Guid(d.Root, true).Value), d.Caption, d.Root, (Domain.IndexOf(',') > 0 || Domain.IndexOf('\n') > 0) ? "多例均衡" : Domain, dtype, d.AuthType ?? Web.WebAuthType.All);
 
-                }
-
-                var rdata = new WebMeta().Put("data", sts);
-                response.Redirect(request.IsMaster ? rdata.Put("IsMaster", true) : rdata);
                 return this.DialogValue("none");
             });
-            if (Key == "Create")
+            switch (Key)
             {
-                if (request.IsMaster == false)
-                {
-                    this.Prompt("新建应用需要管理员权限");
-                }
-                this.Create();
-                return;
+                case "Create":
+                    if (request.IsMaster == false)
+                    {
+                        this.Prompt("新建应用需要管理员权限");
+                    }
+                    this.Create();
+                    return;
             }
             var site = DataFactory.Instance().Site(Key);
+
             var ms = request.SendValues ?? request.Arguments;
             var Model = this.AsyncDialog("Model", g =>
             {
                 if (ms.ContainsKey("limit") == false)
                 {
+                    if (site == null)
+                    {
+                        site = DataFactory.Instance().Site(UMC.Data.Utility.IntParse(Key, 0));
+                        if (site != null)
+                        {
+                            request.Arguments.Put("Key", site.Root);
+                        }
+                    }
                     this.Context.Send(new UISectionBuilder(request.Model, request.Command, request.Arguments)
-                        .RefreshEvent("Site.Config", "image")
+                        .RefreshEvent("Site.Config", "System.Picture")
                         .Builder(), true);
                 }
 
+                var IsProxy = SiteConfig.Config(site.AuthConf).Contains("*");
+                var IsShow = ms["Show"] == "true";
+                if (IsProxy == false)
+                {
+                    IsShow = true;
+                }
                 var title = UITitle.Create();
 
                 title.Title = "应用配置";
@@ -787,19 +926,18 @@ namespace UMC.Proxy.Activities
                 {
                     title.Right(new UIEventText("复制").Click(new UIClick(new WebMeta(request.Arguments).Put(g, "Copy")).Send(request.Model, request.Command)));
 
-                }
+                }//Server
 
                 var ui = UISection.Create(title);
                 var imageId = Data.Utility.Guid(site.Root, true);
 
-                var imageTextView = new UMC.Web.UI.UIImageTextValue(Data.WebResource.Instance().ImageResolve(imageId.Value, "1", 4), "", "图标");
+                var imageTextView = new UMC.Web.UI.UIImageTextValue(Data.WebResource.Instance().ImageResolve(imageId.Value, "1", 4) + $"&_t={site.ModifyTime}", "", "图标");
                 imageTextView.Style.Name("image-width", "100");
-                imageTextView.Click(new UIClick("id", imageId.ToString(), "seq", "1")
-                { Model = "Design", Command = "Picture" });
+                imageTextView.Click(new UIClick(new WebMeta(request.Arguments).Put(g, "Image")).Send(request.Model, request.Command));
 
                 ui.Add(imageTextView);
 
-                ui.AddCell("应用标识", site.Root, new UIClick(new WebMeta(request.Arguments).Put(g, "Setting")).Send(request.Model, request.Command))
+                ui.AddCell("应用标识", site.Root, IsShow ? new UIClick(new WebMeta(request.Arguments).Put(g, "Setting")).Send(request.Model, request.Command) : null)
 
                  .AddCell("应用名称", site.Caption, new UIClick(new WebMeta(request.Arguments).Put(g, "Home")).Send(request.Model, request.Command));
 
@@ -808,11 +946,21 @@ namespace UMC.Proxy.Activities
 
                 ui.NewSection().AddCell("负载网址", (site.Domain.IndexOf(',') > 0 || site.Domain.IndexOf('\n') > 0) ? "多例均衡" : site.Domain, new UIClick(new WebMeta(request.Arguments).Put(g, "Domain")).Send(request.Model, request.Command))
 
-                .AddCell("请求配置", String.IsNullOrEmpty(site.HeaderConf) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "HeaderConf")).Send(request.Model, request.Command))
-                .NewSection().AddCell("时效参数", String.Format("{0}s:{1}m", site.Timeout ?? 100, site.AuthExpire ?? 30), new UIClick(new WebMeta(request.Arguments).Put(g, "Timeout")).Send(request.Model, request.Command))
+                .AddCell("请求配置", String.IsNullOrEmpty(site.HeaderConf) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "HeaderConf")).Send(request.Model, request.Command));
+                ui.NewSection().AddCell("动静分离", String.IsNullOrEmpty(site.StaticConf) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "StaticConf")).Send(request.Model, request.Command))
+                          .AddCell("日志参数", String.IsNullOrEmpty(site.LogConf) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "LogConf")).Send(request.Model, request.Command));
 
-                .AddCell("应用管理员", String.IsNullOrEmpty(site.AdminConf) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "AdminConf")).Send(request.Model, request.Command));
+                ui.NewSection().AddCell("桌面授权", "", new UIClick(new WebMeta().Put("Key", site.Root, "Model", "Auth")).Send(this.Context.Request.Model, this.Context.Request.Command))
+               .AddCell("应用安全码", new UIClick(new WebMeta(request.Arguments).Put(g, "AppSecret")).Send(request.Model, request.Command));
 
+                var imageUI = ui.NewSection().AddCell("图片处理", "配置", new UIClick(new WebMeta(request.Arguments).Put(g, "ImagesConf")).Send(request.Model, request.Command));
+
+
+                var imagePaths = SiteConfig.Config(site.ImagesConf);
+                foreach (var key in imagePaths)
+                {
+                    imageUI.AddCell(key, new UIClick(String.Format("SITE_IMAGE_CONFIG_{0}{1}", site.Root, MD5(key as string)).ToUpper()).Send(request.Model, "ConfImage"));
+                }
 
 
 
@@ -839,106 +987,132 @@ namespace UMC.Proxy.Activities
                 }
 
                 var hosts = DataFactory.Instance().Host(site.Root);
-                ui2 = ui.NewSection().AddCell("绑定域名", "配置", new UIClick(new WebMeta(request.Arguments).Put(g, "Host")).Send(request.Model, request.Command));
+                ui2 = ui.NewSection().AddCell("应用域名", "配置", new UIClick(new WebMeta(request.Arguments).Put(g, "Host")).Send(request.Model, request.Command));
                 foreach (var h in hosts)
                 {
-                    var pcell = UICell.Create("UI", new WebMeta().Put("text", h.Host));
+                    var Scheme = String.Empty;
+                    switch (h.Scheme ?? 0)
+                    {
+                        case 1:
+                            Scheme = "Http";
+                            break;
+                        case 2:
+                            Scheme = "Https";
+                            break;
+                    }
+                    var pcell = UICell.UI(h.Host, Scheme, new UIClick("Model", "CSR", "Domain", h.Host).Send(request.Model, "Server"));
                     ui2.Delete(pcell, new UIEventText("移除").Click(new UIClick(new WebMeta(request.Arguments).Put(g, h.Host)).Send(request.Model, request.Command)));
 
 
                 }
 
-                if (hosts.Length > 0)
+                if (hosts.Length > 0 && IsShow)
                 {
-                    var hm = "登录页选择";
-                    switch ((site.HostModel ?? HostModel.Select))
+                    var hm = "不切换";
+                    switch ((site.HostModel ?? HostModel.None))
                     {
                         case HostModel.Login:
-                            hm = "登录页跳转";
+                            hm = "登录页切换";
                             break;
                         case HostModel.Check:
-                            hm = "浏览器中跳转";
+                            hm = "浏览器中切换";
                             break;
                         case HostModel.Disable:
-                            hm = "全域名跳转";
+                            hm = "全域名切换";
                             break;
                     }
-                    ui2.AddCell("域名反代", hm, new UIClick(new WebMeta(request.Arguments).Put(g, "HostModel")).Send(request.Model, request.Command));
 
-
+                    ui2.AddCell("切换认证", hm, new UIClick(new WebMeta(request.Arguments).Put(g, "HostModel")).Send(request.Model, request.Command));
+                    ui2 = ui2.AddCell("切换地址", "配置", new UIClick(new WebMeta(request.Arguments).Put(g, "RedirectPath")).Send(request.Model, request.Command));
+                    var redPaths = SiteConfig.Config(site.RedirectPath);
+                    foreach (var key in redPaths)
+                    {
+                        ui2.AddCell(key, new UIClick(String.Format("SITE_JS_CONFIG_{0}{1}", site.Root, MD5(key as string)).ToUpper()).Send(request.Model, "Conf"));
+                    }
                 }
-
-                ui.NewSection()
-                        .AddCell("动静分离", String.IsNullOrEmpty(site.StaticConf) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "StaticConf")).Send(request.Model, request.Command))
-                        //.AddCell("日志埋点", String.IsNullOrEmpty(site.LogPathConf) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "LogPathConf")).Send(request.Model, request.Command))
-                        .AddCell("许可路径", String.IsNullOrEmpty(site.AuthConf) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "AuthConf")).Send(request.Model, request.Command));
-
-
-
-
-                ui2 = ui.NewSection().AddCell("追加脚本", "配置", new UIClick(new WebMeta(request.Arguments).Put(g, "AppendJSConf")).Send(request.Model, request.Command));
-
-
-
-
-                var jsPaths = SiteConfig.Config(site.AppendJSConf);
-                foreach (var key in jsPaths)
+                if (IsShow)
                 {
-                    ui2.AddCell(key, new UIClick(String.Format("SITE_JS_CONFIG_{0}{1}", site.Root, MD5(key as string)).ToUpper()).Send(request.Model, "Conf"));
+                    ui.NewSection()
+                            .AddCell("许可路径", String.IsNullOrEmpty(site.AuthConf) ? "未设置" : (IsProxy ? "代理转发" : "已设置"), new UIClick(new WebMeta(request.Arguments).Put(g, "AuthConf")).Send(request.Model, request.Command))
+                      .AddCell("应用时效", String.Format("{0}s:{1}m", site.Timeout ?? 100, site.AuthExpire ?? 30), new UIClick(new WebMeta(request.Arguments).Put(g, "Timeout")).Send(request.Model, request.Command));
+
+
+
+
+                    ui2 = ui.NewSection().AddCell("追加脚本", "配置", new UIClick(new WebMeta(request.Arguments).Put(g, "AppendJSConf")).Send(request.Model, request.Command));
+
+
+
+
+                    var jsPaths = SiteConfig.Config(site.AppendJSConf);
+                    foreach (var key in jsPaths)
+                    {
+                        ui2.AddCell(key, new UIClick(String.Format("SITE_JS_CONFIG_{0}{1}", site.Root, MD5(key as string)).ToUpper()).Send(request.Model, "Conf"));
+                    }
+
+
+
+
+
+
+
+                    ui2 = ui.NewSection().AddCell("内容转化", String.IsNullOrEmpty(site.HostReConf) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "HostReConf")).Send(request.Model, request.Command));
+
+
+                    ui2.AddCell("透传会话", String.IsNullOrEmpty(site.OutputCookies) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "OutputCookie")).Send(request.Model, request.Command));
+
+                    var m = "标准模式";
+                    switch ((site.UserModel ?? UserModel.Standard))
+                    {
+                        case UserModel.Bridge:
+                            m = "桥接模式";
+                            break;
+                        case UserModel.Share:
+                            m = "共享模式";
+                            break;
+                        case UserModel.Quote:
+                            m = "引用模式";
+                            break;
+                        case UserModel.Check:
+                            m = "自主检测";
+                            break;
+                        case UserModel.Checked:
+                            m = "自动检测";
+                            break;
+                    }
+
+                    ui.NewSection().AddCell("账户对接模式", m, new UIClick(new WebMeta(request.Arguments).Put(g, "UserModel")).Send(request.Model, request.Command))
+
+                   .AddCell("触发登录页面", String.IsNullOrEmpty(site.LogoutPath) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "LogoutPath")).Send(request.Model, request.Command));
+
+
+                    ui.NewSection().AddCell("账户登录接口", new UIClick(String.Format("{0}_Login", site.Root)).Send(request.Model, "Mime"));
+
+                    ui.NewSection().AddCell("密码托管接口", new UIClick(String.Format("{0}_Update", site.Root)).Send(request.Model, "Mime"));
+
+                    ui.NewSection().AddCell("账户检测接口", new UIClick(String.Format("{0}_Check", site.Root)).Send(request.Model, "Mime"));
+
+                    ui.UIFootBar = new UIFootBar() { IsFixed = true };
+                    ui.UIFootBar.AddText(new UIEventText("应用身份设置").Click(new UIClick("Key", site.Root, "Model", "Setting").Send(request.Model, "App")),
+                     new UIEventText("重新加载").Click(new UIClick(new WebMeta(request.Arguments).Put(g, "Reload")).Send(request.Model, request.Command)).Style(new UIStyle().BgColor()));
+
+
                 }
-
-
-                ui2 = ui.NewSection().AddCell("内容转化", String.IsNullOrEmpty(site.HostReConf) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "HostReConf")).Send(request.Model, request.Command));
-
-
-                ui2.AddCell("透传会话", String.IsNullOrEmpty(site.OutputCookies) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "OutputCookie")).Send(request.Model, request.Command));
-
-                var m = "标准模式";
-                switch ((site.UserModel ?? UserModel.Standard))
+                else
                 {
-                    case UserModel.Bridge:
-                        m = "桥接模式";
-                        break;
-                    case UserModel.Share:
-                        m = "共享模式";
-                        break;
-                    case UserModel.Quote:
-                        m = "引用模式";
-                        break;
-                    case UserModel.Check:
-                        m = "自主检测";
-                        break;
-                    case UserModel.Checked:
-                        m = "自动检测";
-                        break;
+                    ui.UIFootBar = new UIFootBar() { IsFixed = true };
+                    ui.UIFootBar.AddText(new UIEventText("网关登录配置").Click(UIClick.Query(new WebMeta().Put("Show", "true"))),
+                     new UIEventText("重新加载").Click(new UIClick(new WebMeta(request.Arguments).Put(g, "Reload")).Send(request.Model, request.Command)).Style(new UIStyle().BgColor()));
+
                 }
-                ui.NewSection().AddCell("异常机器人", String.IsNullOrEmpty(site.Webhook) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "Webhook")).Send(request.Model, request.Command));
-
-                ui.NewSection().AddCell("账户对接模式", m, new UIClick(new WebMeta(request.Arguments).Put(g, "UserModel")).Send(request.Model, request.Command))
-
-                .AddCell("触发登录页面", String.IsNullOrEmpty(site.LogoutPath) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "LogoutPath")).Send(request.Model, request.Command));
-
-
-                ui.NewSection().AddCell("账户登录接口", new UIClick(String.Format("{0}_Login", site.Root)).Send(request.Model, "Mime"));
-
-                ui.NewSection().AddCell("密码托管接口", new UIClick(String.Format("{0}_Update", site.Root)).Send(request.Model, "Mime"));
-
-                ui.NewSection().AddCell("账户检测接口", new UIClick(String.Format("{0}_Check", site.Root)).Send(request.Model, "Mime"));
-
-
-                ui.UIFootBar = new UIFootBar() { IsFixed = true };
-                ui.UIFootBar.AddText(new UIEventText("可见授权").Click(new UIClick(new WebMeta(request.Arguments).Put(g, "Auth")).Send(request.Model, request.Command)),
-                 new UIEventText("重新加载").Click(new UIClick(new WebMeta(request.Arguments).Put(g, "Reload")).Send(request.Model, request.Command)).Style(new UIStyle().BgColor()));
-
-
                 response.Redirect(ui);
                 return this.DialogValue("none");
             });
 
             if (request.IsMaster == false)
             {
-                var userName = Context.Token.Username;// UMC.Data.Utility.GetUsername();
-                if (SiteConfig.Config(site.AdminConf).Any(r => r == userName) == false)
+                var rols = UMC.Data.DataFactory.Instance().Roles(this.Context.Token.UserId.Value, site.SiteKey.Value);
+                if (rols.Contains(UMC.Security.Membership.AdminRole) == false)
                 {
                     this.Prompt("配置应用的需要应用管理员权限");
                 }
@@ -946,6 +1120,15 @@ namespace UMC.Proxy.Activities
             }
             switch (Model)
             {
+                case "Image":
+
+                    DataFactory.Instance().Put(new Site
+                    {
+                        ModifyTime = Utility.TimeSpan(),
+                        Root = site.Root
+                    });
+                    response.Redirect("System", "Picture", new WebMeta().Put("id", Data.Utility.Guid(site.Root, true)).Put("seq", "1"), true);
+                    break;
                 case "HostModel":
                     SetHostModel(site);
                     break;
@@ -956,6 +1139,13 @@ namespace UMC.Proxy.Activities
                     }
                     this.Copy(site);
                     break;
+                case "Auth":
+                    if (request.IsMaster == false)
+                    {
+                        this.Prompt("需要管理员权限");
+                    }
+                    response.Redirect("Settings", "AuthKey", new WebMeta().Put("Key", $"Desktop/{site.Root}"), true);
+                    break;
                 case "Quote":
                     this.Quote(site);
                     break;
@@ -965,14 +1155,14 @@ namespace UMC.Proxy.Activities
                 case "UserModel":
                     UseModel(site);
                     break;
-                case "Auth":
-                    response.Redirect("Settings", "AuthKey", site.Root);
-                    break;
                 case "Home":
                     this.Home(site);
                     break;
                 case "Timeout":
                     this.TimeOut(site);
+                    break;
+                case "ImagesConf":
+                    this.ImagesConf(site);
                     break;
                 case "AppendJSConf":
                     this.AppendJSConf(site);
@@ -987,9 +1177,11 @@ namespace UMC.Proxy.Activities
                     this.Setting(site);
 
                     break;
-
-                case "LogPathConf":
-                    this.LogPathConf(site);
+                case "AppSecret":
+                    this.AppSecret(site);
+                    break;
+                case "LogConf":
+                    this.LogConf(site);
                     break;
                 case "AdminConf":
                     this.AdminConf(site);
@@ -1005,9 +1197,6 @@ namespace UMC.Proxy.Activities
                     break;
                 case "Host":
                     this.Host(site);
-                    break;
-                case "Webhook":
-                    Webhook(site);
                     break;
                 case "Domain":
                     this.Domain(site);
@@ -1028,6 +1217,9 @@ namespace UMC.Proxy.Activities
                     break;
                 case "AuthConf":
                     this.AuthConf(site);
+                    break;
+                case "RedirectPath":
+                    this.RedirectPath(site);
                     break;
                 case "StaticConf":
                     this.StaticConf(site);
@@ -1053,7 +1245,7 @@ namespace UMC.Proxy.Activities
                     {
 
 
-                        DataFactory.Instance().Delete(new HostSite { Host = Model });
+                        DataFactory.Instance().Delete(new SiteHost { Host = Model });
                     }
 
                     break;
@@ -1067,21 +1259,27 @@ namespace UMC.Proxy.Activities
         {
             var host = UIDialog.AsyncDialog(this.Context, "Setting", g =>
             {
-                var from = new Web.UIFormDialog() { Title = "绑定域名" };
+                var from = new Web.UIFormDialog() { Title = "应用域名" };
                 from.AddText("域名", "Setting", String.Empty);
-                //from.AddText("应用", "Value", String.Empty);
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.AddRadio("支持协议", "Scheme").Put("Http", "1").Put("Https", "2").Put("Http和Https", "0", true);
+                from.Submit("确认", "Site.Config");
                 return from;
             });
             if (System.Text.RegularExpressions.Regex.IsMatch(host, @"^([a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z0-9]{1,6}$") == false)
             {
                 this.Prompt("域名格式不正确");
             }
-            DataFactory.Instance().Put(new HostSite
+            var h = DataFactory.Instance().HostSite(host);
+            if (h != null && String.Equals(h.Root, site.Root) == false)
+            {
+                this.Prompt("此域名已经绑定其他应用");
+            }
+            DataFactory.Instance().Put(new SiteHost
             {
                 Root = site.Root,
+                Scheme = UMC.Data.Utility.IntParse(this.AsyncDialog("Scheme", "0"), 0),
                 Host = host
-            });
+            }); ;
 
             this.Context.Send("Site.Config", true);
         }
@@ -1103,7 +1301,7 @@ namespace UMC.Proxy.Activities
 
                 from2.AddPrompt("后缀[0-9]表示负载均衡权重参数，后缀@user表示用户灰度");
 
-                from2.Submit("确认", this.Context.Request, "Site.Config");
+                from2.Submit("确认", "Site.Config");
                 return from2;
             });
 
@@ -1112,7 +1310,7 @@ namespace UMC.Proxy.Activities
             var doms = Domain.Split(',', '\n');
             foreach (var v in doms)
             {
-                if (v.StartsWith("http://") == false && v.StartsWith("https://") == false)
+                if (v.StartsWith("http://") == false && v.StartsWith("https://") == false && v.StartsWith("file://") == false)
                 {
                     this.Prompt("格式不正确，请输入正确的网址");
                 }
@@ -1145,20 +1343,40 @@ namespace UMC.Proxy.Activities
             }); ;
             this.Context.Send("Site.Config", true);
         }
-        private void LogPathConf(Site site)
+        private void LogConf(Site site)
         {
             var config = this.AsyncDialog("Config", g =>
             {
-                var from = new Web.UIFormDialog() { Title = "日志埋点" };
-                from.AddTextarea("埋点路径", "LogPathConf", site.LogPathConf).PlaceHolder("路径配置格式").Put("Rows", 10);
-
-                from.AddPrompt("埋点路径的日志强制收录，用换行、空格或逗号分割多项");
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                var from = new Web.UIFormDialog() { Title = "日志参数" };
+                from.AddTextarea("参数", "LogConf", site.LogConf).PlaceHolder("日志参数").Put("Rows", 10).NotRequired();
+                from.AddPrompt("默认获取Cookie值,以“:”开始表示获取请求Header值,以“:”结尾表示获取响应的Header值,多项用换行分割");
+                from.Submit("确认", "Site.Config");
                 return from;
             });
-            var Key = config["LogPathConf"];
+            var Key = config["LogConf"];
 
-            DataFactory.Instance().Put(new Site { Root = site.Root, LogPathConf = Key });
+            DataFactory.Instance().Put(new Site { Root = site.Root, LogConf = Key });
+
+            this.Context.Send("Site.Config", true);
+        }
+        private void RedirectPath(Site site)
+        {
+            var config = this.AsyncDialog("Config", g =>
+            {
+                var from = new Web.UIFormDialog() { Title = "切换地址" };
+                from.AddTextarea("切换地址", "RedirectPath", site.RedirectPath).PlaceHolder("路径配置格式").Put("Rows", 6).NotRequired();
+
+                from.AddPrompt("多项用换行、空格或逗号分割，支持“*”前后取配");
+                from.Submit("确认", "Site.Config");
+                return from;
+            });
+            var Key = config["RedirectPath"] ?? String.Empty;
+            if (String.Equals("none", Key))
+            {
+                Key = String.Empty;
+            }
+
+            DataFactory.Instance().Put(new Site { Root = site.Root, RedirectPath = Key });
 
             this.Context.Send("Site.Config", true);
         }
@@ -1167,10 +1385,10 @@ namespace UMC.Proxy.Activities
             var config = this.AsyncDialog("Config", g =>
             {
                 var from = new Web.UIFormDialog() { Title = "许可路径" };
-                from.AddTextarea("许可路径", "AuthConf", site.AuthConf).PlaceHolder("路径配置格式").Put("Rows", 6);
+                from.AddTextarea("许可路径", "AuthConf", site.AuthConf).PlaceHolder("路径配置格式").Put("Rows", 6).NotRequired();
 
-                from.AddPrompt("多项用换行、空格或逗号分割，支持“*”前后取配");
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.AddPrompt("多项用换行、空格或逗号分割，支持“*”前后取配,当单行只有“*”，则表示只启用应用代理转发，关闭网关登录功能");
+                from.Submit("确认", "Site.Config");
                 return from;
             });
             var Key = config["AuthConf"] ?? String.Empty;
@@ -1190,15 +1408,34 @@ namespace UMC.Proxy.Activities
             {
                 var from = new Web.UIFormDialog() { Title = "追加脚本的路径" };
 
-                from.AddTextarea("页面路径", "AppendJSConf", site.AppendJSConf).PlaceHolder("路径配置格式").Put("Rows", 6);
+                from.AddTextarea("页面路径", "AppendJSConf", site.AppendJSConf).PlaceHolder("路径配置格式").Put("Rows", 6).NotRequired();
 
                 from.AddPrompt("多项用换行、空格或逗号分割");
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.Submit("确认", "Site.Config");
                 return from;
             });
             var Key = config["AppendJSConf"];
 
             DataFactory.Instance().Put(new Site { Root = site.Root, AppendJSConf = Key });
+
+            this.Context.Send("Site.Config", true);
+        }
+        private void ImagesConf(Site site)
+        {
+
+            var config = this.AsyncDialog("Config", g =>
+            {
+                var from = new Web.UIFormDialog() { Title = "处理图片路径" };
+
+                from.AddTextarea("触发路径", "ImagesConf", site.ImagesConf).PlaceHolder("路径配置格式").Put("Rows", 6).NotRequired();
+
+                from.AddPrompt("多项用换行、空格或逗号分割");
+                from.Submit("确认", "Site.Config");
+                return from;
+            });
+            var Key = config["ImagesConf"];
+
+            DataFactory.Instance().Put(new Site { Root = site.Root, ImagesConf = Key });
 
             this.Context.Send("Site.Config", true);
         }
@@ -1209,10 +1446,10 @@ namespace UMC.Proxy.Activities
             var config = this.AsyncDialog("Config", g =>
             {
                 var from = new Web.UIFormDialog() { Title = "动静分离" };
-                from.AddTextarea("不分离路径", "StaticConf", site.StaticConf).Put("Rows", 10).PlaceHolder("配置不分离的路径");
+                from.AddTextarea("不分离路径", "StaticConf", site.StaticConf).Put("Rows", 10).PlaceHolder("配置不分离的路径").NotRequired();
 
                 from.AddPrompt("默认对文件名为gif、ico、svg、bmp、png、jpg、jpeg、css、less、sass、scss、js、webp、jsx、coffee、ts、ttf、woff、woff2、wasm进行静态分离，分离参数all、user、 one、[num]");
-                from.Submit("确认", this.Context.Request, "Site.Config");
+                from.Submit("确认", "Site.Config");
                 return from;
             });
             var Key = config["StaticConf"];

@@ -4,34 +4,45 @@ using System.IO;
 using System.Linq;
 using System.IO.Compression;
 using UMC.Data;
+using UMC.Net;
 using UMC.Proxy.Entities;
+using System.Collections.Generic;
+using System.Text.RegularExpressions;
+using System.Text;
+using UMC.Data.Caches;
+using System.Security.Cryptography.X509Certificates;
 
 namespace UMC.Proxy
 {
-    public class DataFactory
+    public class DataFactory : IStringSubscribe
     {
         static DataFactory()
         {
-            HotCache.NetDBRegister<UMC.Proxy.Entities.Site>("Root").Register("SiteKey").IsSyncData = true;
-            HotCache.Register<UMC.Proxy.Entities.Cookie>("user_id", "Domain", "IndexValue");
-            HotCache.Register<UMC.Proxy.Entities.HostSite>("Host").Register("Root", "Host");
-            HotCache.ObjectRegister<UMC.Proxy.SiteConfig>("Root");
-
-
+            HotCache.Register<Site>("Root").Register("SiteKey");
+            HotCache.Register<Cookie>("user_id", "Domain", "IndexValue");
+            HotCache.Register<SiteHost>("Host").Register("Root", "Host");
         }
         public static DataFactory Instance()
         {
+            if (_Instance == null)
+            {
+                _Instance = new DataFactory();
+                NetSubscribe.Subscribe("SiteConfig", _Instance);
+            }
             return _Instance;
         }
-        static DataFactory _Instance = new DataFactory();
+        static DataFactory _Instance;// = new DataFactory();
         public static void Instance(DataFactory dataFactory)
         {
             _Instance = dataFactory;
+            NetSubscribe.Subscribe("SiteConfig", _Instance);
         }
+
 
         public virtual Site[] Site()
         {
-            return HotCache.Cache<Site>().Get(new Proxy.Entities.Site(), "", new object[0]);
+            int index;
+            return HotCache.Cache<Site>().Find(new Entities.Site(), 0, out index);
 
         }
 
@@ -47,21 +58,22 @@ namespace UMC.Proxy
 
         }
 
-        public virtual void Put(HostSite host)
+        public virtual void Put(SiteHost host)
         {
-            HotCache.Cache<HostSite>().Put(host);
+            HotCache.Cache<SiteHost>().Put(host);
         }
-        public virtual HostSite HostSite(string host)
+        public virtual SiteHost HostSite(string host)
         {
-            return HotCache.Cache<HostSite>().Get(new Entities.HostSite { Host = host });
+            return HotCache.Cache<SiteHost>().Get(new Entities.SiteHost { Host = host });
         }
-        public virtual HostSite[] Host(string root)
+        public virtual SiteHost[] Host(string root)
         {
-            return HotCache.Cache<HostSite>().Get(new Entities.HostSite(), "Root", root);
+            int index;
+            return HotCache.Cache<SiteHost>().Find(new Entities.SiteHost { Root = root }, 0, out index);
         }
-        public virtual void Delete(HostSite host)
+        public virtual void Delete(SiteHost host)
         {
-            HotCache.Cache<HostSite>().Delete(host);
+            HotCache.Cache<SiteHost>().Delete(host);
         }
         public virtual Cookie Cookie(String domain, Guid user_id, int index)
         {
@@ -69,38 +81,26 @@ namespace UMC.Proxy
 
 
         }
-        public virtual Cookie[] Cookies(Guid user_id)
-        {
-
-            return HotCache.Cache<Cookie>().Get(new Proxy.Entities.Cookie
-            {
-                user_id = user_id
-            }, "user_id", new object[0]);
-        }
         public virtual Cookie[] Cookies(String domain, Guid user_id)
         {
-            return Database.Instance().ObjectEntity<Cookie>()
-                  .Where.And().Equal(new UMC.Proxy.Entities.Cookie
-                  {
-                      user_id = user_id,
-                      Domain = domain
-                  }).Entities.Query().OrderBy(r => r.IndexValue ?? 0).ToArray();
+            int index;
+            return HotCache.Cache<Cookie>().Find(new Entities.Cookie { user_id = user_id, Domain = domain }, 0, out index);
         }
         public virtual void Put(Site site)
         {
-            var secret = Data.WebResource.Instance().Provider["appSecret"];
-            if (String.IsNullOrEmpty(secret) == false)
-            {
-                site.Root = site.Root.ToLower();
-                HotCache.Cache<Site>().Put(site);
-            }
+            site.Root = site.Root.ToLower();
+            HotCache.Cache<Site>().Put(site);
         }
         public virtual bool IsRegister()
         {
+            var appId = WebResource.Instance().Provider["appId"];
             var secret = Data.WebResource.Instance().Provider["appSecret"];
-            if (String.IsNullOrEmpty(secret) == false)
+            if (String.IsNullOrEmpty(secret) == false && String.IsNullOrEmpty(appId) == false)
             {
-                return true;
+                var webr4 = new Uri(APIProxy.Uri, "Transfer").WebRequest();// Utility.Parse36Encode(Utility.Guid(appId).Value))).WebRequest();
+                var nvs = new System.Collections.Specialized.NameValueCollection();
+                Utility.Sign(webr4, nvs, secret);
+                return webr4.Get().StatusCode == System.Net.HttpStatusCode.OK;
             }
             return false;
         }
@@ -131,11 +131,6 @@ namespace UMC.Proxy
             }
 
         }
-        public virtual UMC.Data.Entities.Log[] Search(UMC.Data.Entities.Log search, int timeType)
-        {
-            int t;
-            return HotCache.Cache<UMC.Data.Entities.Log>().Get(search, 0, timeType, out t);
-        }
         public virtual String Evaluate(String js, params string[] args)
         {
             return "";
@@ -148,6 +143,8 @@ namespace UMC.Proxy
                     return new GZipStream(response, CompressionMode.Decompress);
                 case "deflate":
                     return new DeflateStream(response, CompressionMode.Decompress);
+                case "br":
+                    return new BrotliStream(response, System.IO.Compression.CompressionMode.Decompress);
                 default:
                     return response;
             }
@@ -160,53 +157,48 @@ namespace UMC.Proxy
                     return new GZipStream(response, CompressionMode.Compress);
                 case "deflate":
                     return new DeflateStream(response, CompressionMode.Compress);
+                case "br":
+                    return new BrotliStream(response, System.IO.Compression.CompressionLevel.Fastest);
                 default:
                     return response;
             }
         }
 
-        public virtual string WebDomain()
-        {
-            return Data.WebResource.Instance().Provider["host"] ?? "/";
-        }
-        //public virtual string TempDirectory()
-        //{
-        //    return UMC.Data.Utility.MapPath("App_Data\\TEMP\\");
-        //}
-
+        Dictionary<String, SiteConfig> siteConfigs = new Dictionary<string, SiteConfig>();
         public virtual SiteConfig SiteConfig(String root)
         {
-            var siteConfig = HotCache.Cache<SiteConfig>().Get(new Proxy.SiteConfig { Root = root });
-            if (siteConfig == null)
+            SiteConfig config;
+            if (siteConfigs.TryGetValue(root, out config))
             {
+                return config;
+            }
+            else
+            {
+
                 var site = this.Site(root);
                 if (site != null)
                 {
-                    siteConfig = new SiteConfig(site); ;
-                    HotCache.Cache<SiteConfig>().Put(siteConfig);
-
+                    config = new SiteConfig(site);
+                    siteConfigs[root] = config;
+                    return config;
                 }
+                return null;
+
             }
-            return siteConfig;
         }
 
-        //public virtual SiteWarn SiteWarn(String Domain, String path, int statusCode)
-        //{
-        //    return HotCache.Cache<SiteWarn>().Get(new Entities.SiteWarn { Domain = Domain, Path = path, StatusCode = statusCode });
-
-
-        //}
-        //public virtual void Warn(SiteWarn siteWarn)
-        //{
-        //    HotCache.Cache<SiteWarn>().Put(siteWarn);
-
-        //}
-
-        public virtual void Delete(Proxy.SiteConfig siteConfig)
+        public virtual void Delete(SiteConfig siteConfig)
         {
+            siteConfigs.Remove(siteConfig.Root);
+            WebFactory.Auths.Remove(siteConfig.Root);
+            NetSubscribe.Publish("SiteConfig", siteConfig.Root);
 
-            HotCache.Cache<SiteConfig>().Delete(siteConfig);
+        }
 
+        void IStringSubscribe.Subscribe(string message)
+        {
+            WebFactory.Auths.Remove(message);
+            siteConfigs.Remove(message);
         }
     }
 }

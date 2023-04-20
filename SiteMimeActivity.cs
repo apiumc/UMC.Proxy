@@ -15,7 +15,7 @@ namespace UMC.Proxy.Activities
     /// 邮箱账户
     /// </summary>
     [UMC.Web.Mapping("Proxy", "Mime", Auth = WebAuthType.User)]
-    class SiteMimeActivity : WebActivity
+    public class SiteMimeActivity : WebActivity
     {
         bool Check(Hashtable login)
         {
@@ -121,7 +121,7 @@ namespace UMC.Proxy.Activities
 
 
                 var Domain = value["Domain"] as string;
-                if (String.IsNullOrEmpty(Domain)==false)
+                if (String.IsNullOrEmpty(Domain) == false)
                 {
                     ui.AddCell("跨域域名", Domain, new UIClick(new WebMeta(request.Arguments).Put(g, "UnDomain")).Send(request.Model, request.Command));
                     ui.AddCell("提交路径", String.IsNullOrEmpty(RawUrl) ? "未设置" : RawUrl, new UIClick(new WebMeta(request.Arguments).Put(g, "RawUrl")).Send(request.Model, request.Command));
@@ -277,7 +277,9 @@ namespace UMC.Proxy.Activities
                 else
                 {
                     ui.NewSection().AddCell("内容转化配置", new UIClick(new WebMeta(request.Arguments).Put(g, "Script")).Send(request.Model, request.Command));
-                    // ui.NewSection().AddCell("内容转化配置", new UIClick(new WebMeta(request.Arguments).Put(g, "DefautValue")).Send(request.Model, request.Command));
+
+
+                    ui.NewSection().AddCell("记住选择内容", value.ContainsKey("RememberValue") ? "记住" : "不记住", new UIClick(new WebMeta(request.Arguments).Put(g, "RememberValue")).Send(request.Model, request.Command));
 
                     var defautValue = value["DefautValue"] as string;
                     ui.NewSection().AddCell("内容默认值", String.IsNullOrEmpty(defautValue) ? "未设置" : "已设置", new UIClick(new WebMeta(request.Arguments).Put(g, "DefautValue")).Send(request.Model, request.Command));
@@ -306,9 +308,12 @@ namespace UMC.Proxy.Activities
                             var tValue = this.AsyncDialog(Model, g =>
                             {
                                 var sheet = new UMC.Web.UISheetDialog() { Title = "账户检测功能" };
-                                sheet.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "Checked")) { Text = "启用自动检测" }.Send(request.Model, request.Command));
-                                sheet.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "Check")) { Text = "启用自主选择" }.Send(request.Model, request.Command));
-                                sheet.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "Standard")) { Text = "关闭账户检测" }.Send(request.Model, request.Command)); //sheet.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "PUT")) { Text = "PUT" }.Send(request.Model, request.Command));
+                                sheet.Put("启用自动检测", "Checked");
+                                sheet.Put("启用自主选择", "Check");
+                                sheet.Put("关闭账户检测", "Standard");
+                                //sheet.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "Checked")) { Text = "启用自动检测" }.Send(request.Model, request.Command));
+                                //sheet.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "Check")) { Text = "启用自主选择" }.Send(request.Model, request.Command));
+                                //sheet.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "Standard")) { Text = "关闭账户检测" }.Send(request.Model, request.Command)); //sheet.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "PUT")) { Text = "PUT" }.Send(request.Model, request.Command));
                                 return sheet;
                             });
                             var userM = UMC.Data.Utility.Parse(tValue, UserModel.Standard);
@@ -336,12 +341,23 @@ namespace UMC.Proxy.Activities
                         var from4 = new UIFormDialog() { Title = "新增扩展字段" };
                         from4.AddText("字段标题", "Value", "");
                         from4.AddText("字段标识", "Name", "");
-                        from4.Submit("确认", this.Context.Request, "Mime.Config");
+                        from4.Submit("确认", "Mime.Config");
                         return from4;
                     });
                     var feilds = value["Feilds"] as Hashtable ?? new Hashtable();
                     feilds[t["Name"]] = t["Value"];
                     value["Feilds"] = feilds;
+                    break;
+
+                case "RememberValue":
+                    if (value.ContainsKey("RememberValue"))
+                    {
+                        value.Remove("RememberValue");
+                    }
+                    else
+                    {
+                        value["RememberValue"] = "YES";
+                    }
                     break;
                 default:
                     var sValue = this.AsyncDialog(Model, g =>
@@ -351,44 +367,40 @@ namespace UMC.Proxy.Activities
                             case "ContentType":
 
                                 var sheet = new UMC.Web.UISheetDialog() { Title = "提交方式" };
-                                sheet.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "application/x-www-form-urlencoded")) { Text = "表单格式" }.Send(request.Model, request.Command));
-                                sheet.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "application/json")) { Text = "JSON格式" }.Send(request.Model, request.Command));
-                                sheet.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "application/xml")) { Text = "XML格式" }.Send(request.Model, request.Command)); //sheet.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "PUT")) { Text = "PUT" }.Send(request.Model, request.Command));
-                                return sheet;
+                                sheet.Put("启用自动检测", "application/x-www-form-urlencoded");
+                                sheet.Put("JSON格式", "application/json");
+                                sheet.Put("XML格式", "application/xml");
+                               return sheet;
 
 
                             case "Method":
 
                                 var sheet2 = new UMC.Web.UISheetDialog() { Title = "提交方式" };
-                                sheet2.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "GET")) { Text = "GET" }.Send(request.Model, request.Command));
-                                sheet2.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "POST")) { Text = "POST" }.Send(request.Model, request.Command));
-                                sheet2.Options.Add(new UIClick(new WebMeta(request.Arguments).Put(g, "PUT")) { Text = "PUT" }.Send(request.Model, request.Command));
-                                return sheet2;
+                                sheet2.Put("GET").Put("POST").Put("PUT");// "application/json");
+                               return sheet2;
 
 
-                            //case "Domain":
-                            //    break
                             case "Domain":
                                 var fromDomain = new UIFormDialog() { Title = "跨域网址" };
                                 fromDomain.AddText("跨域网址", "Domain", value["Domain"] as string);
-                                fromDomain.Submit("确认", this.Context.Request, "Mime.Config");
+                                fromDomain.Submit("确认", "Mime.Config");
                                 return fromDomain;
                             case "RawUrl":
                                 var from = new UIFormDialog() { Title = "提交路径" };
                                 from.AddText("提交路径", "RawUrl", value["RawUrl"] as string);
-                                from.Submit("确认", this.Context.Request, "Mime.Config");
+                                from.Submit("确认", "Mime.Config");
                                 return from;
                             case "Script":
                                 var from5 = new UIFormDialog() { Title = "内容转化" };
                                 from5.AddTextarea("脚本或者标识", "Script", value["Script"] as string).Put("Rows", 20);
                                 from5.AddPrompt("可配置内容表单name、属性key或者js脚本");
-                                from5.Submit("确认", this.Context.Request, "Mime.Config");
+                                from5.Submit("确认", "Mime.Config");
                                 return from5;
                             case "Header":
                                 var from6 = new UIFormDialog() { Title = "Header字典对" };
                                 from6.AddTextarea("字典对", "Header", value["Header"] as string).Put("Rows", 20).PlaceHolder("H:V");
 
-                                from6.Submit("确认", this.Context.Request, "Mime.Config");
+                                from6.Submit("确认", "Mime.Config");
                                 return from6;
 
 
@@ -407,7 +419,7 @@ namespace UMC.Proxy.Activities
                                     from2.AddTextarea("内容格式", "Content", value["Content"] as string).Put("Rows", 20);
 
                                 }
-                                from2.Submit("确认", this.Context.Request, "Mime.Config");
+                                from2.Submit("确认", "Mime.Config");
                                 return from2;
 
 
@@ -424,7 +436,7 @@ namespace UMC.Proxy.Activities
                                 .Put("默认选中", "Selected", String.Equals(UpdateModel, "Selected")).Put("强制托管", "Compel", String.Equals(UpdateModel, "Compel")).Put("禁用托管", "Disable", String.Equals(UpdateModel, "Disable"));
 
 
-                                from9.Submit("确认", this.Context.Request, "Mime.Config");
+                                from9.Submit("确认", "Mime.Config");
                                 return from9;
 
 
@@ -435,7 +447,7 @@ namespace UMC.Proxy.Activities
                                 from8.AddText("默认值", "DefautValue", value["DefautValue"] as string).Put("Rows", 20);
 
 
-                                from8.Submit("确认", this.Context.Request, "Mime.Config");
+                                from8.Submit("确认", "Mime.Config");
                                 return from8;
                             case "Callback":
 
@@ -444,7 +456,7 @@ namespace UMC.Proxy.Activities
                                 fromCallback.AddText("跳转参数", "Callback", value["Callback"] as string).Put("Rows", 20);
 
 
-                                fromCallback.Submit("确认", this.Context.Request, "Mime.Config");
+                                fromCallback.Submit("确认", "Mime.Config");
                                 return fromCallback;
                             case "IsLoginHTML":
                                 return this.DialogValue(value.ContainsKey("IsLoginHTML") ? "none" : "true");
@@ -475,7 +487,7 @@ namespace UMC.Proxy.Activities
                                 from3.AddPrompt("当模式为成功正文时，内容是“Url”时，表示检测是否重定向");
 
                                 from3.AddText("检测内容", "Finish", fhv);
-                                from3.Submit("确认", this.Context.Request, "Mime.Config");
+                                from3.Submit("确认", "Mime.Config");
                                 return from3;
                             default:
                                 var feilds4 = value["Feilds"] as Hashtable;
@@ -537,14 +549,6 @@ namespace UMC.Proxy.Activities
                     }
                     break;
             }
-            //if (Model == "Feilds")
-            //{
-
-            //}
-            //else
-            //{
-
-            //}
             Config platformConfig = new Config();
             platformConfig.ConfKey = mainKey;
             platformConfig.ConfValue = UMC.Data.JSON.Serialize(value);

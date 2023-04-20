@@ -12,44 +12,24 @@ namespace UMC.Proxy.Entities
     [Web.Mapping]
     public class Initializer : UMC.Data.Sql.Initializer
     {
-        public Initializer()
-        {
-            this.Setup(new Site { Root = String.Empty }, new Site
-            {
-                OutputCookies = String.Empty,
-                HostReConf = String.Empty,
-                LogoutPath = String.Empty,
-                LogPathConf = String.Empty,
-                StaticConf = String.Empty,
-                Conf = String.Empty,
-                AdminConf = String.Empty,
-                AppendJSConf = String.Empty,
-                AuthConf = String.Empty
-            });
-            this.Setup(new HostSite { Host = String.Empty });
-            this.Setup(new Cookie { user_id = Guid.Empty, Domain = String.Empty, IndexValue = 0 }, new Cookie { Cookies = String.Empty, Config = String.Empty });
-        }
 
         public override string Name => "Proxy";
 
         public override string Caption => "应用网关";
 
-        public override string ProviderName => "defaultDbProvider";
-
-        public override void Menu(IDictionary hash)
+        public override void Setup(CSV.Log log)
         {
             Data.DataFactory.Instance().Put(new Menu()
             {
-                Icon = "\uea04",
-                Caption = "应用网关",
-                IsDisable = false,
-                ParentId = Guid.Empty,
+                Icon = "\uf085",
+                Caption = "应用管理",
+                IsHidden = false,
+                ParentId = 0,
                 Seq = 10,
-                Id = Utility.Guid("#proxy", true),
+                Id = 200,
                 Url = "#proxy"
 
             });
-
         }
     }
 }

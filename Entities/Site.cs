@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using UMC.Data;
 
 namespace UMC.Proxy.Entities
 {
@@ -33,9 +34,9 @@ namespace UMC.Proxy.Entities
     public enum HostModel
     {
         /// <summary>
-        /// 在登录入口选择
+        /// 不处理
         /// </summary>
-        Select = 0,
+        None = 0,
         /// <summary>
         /// 在登录入口跳转
         /// </summary>
@@ -63,7 +64,7 @@ namespace UMC.Proxy.Entities
 
     }
 
-    public class Site
+    public partial class Site : Record
     {
         public string Root
         {
@@ -127,10 +128,10 @@ namespace UMC.Proxy.Entities
         /// <summary>
         /// 移动主页
         /// </summary>
-        //public string MobileHome
-        //{
-        //    get; set;
-        //}
+        public string MobileHome
+        {
+            get; set;
+        }
         public int? OpenModel { get; set; }
 
         public UserModel? UserModel { get; set; }
@@ -158,7 +159,7 @@ namespace UMC.Proxy.Entities
         /// <summary>
         /// 日志地址
         /// </summary>
-        public string LogPathConf
+        public string LogConf
         {
             get; set;
         }
@@ -219,18 +220,25 @@ namespace UMC.Proxy.Entities
         {
             get; set;
         }
-        /// <summary>
-        /// 机器人地址
-        /// </summary>
-        public string Webhook { get; set; }
-        /// <summary>
-        /// 机器人签名
-        /// </summary>
-        public string WebhookSecret { get; set; }
 
 
+        public string AppSecret { get; set; }
+
+
+        public string RedirectPath
+        {
+            get; set;
+        }
+        public bool? IsAuth
+        {
+            get; set;
+        }
+
+        public String ImagesConf { get; set; }
+        public int? ModifyTime { get; set; }
+        // public String EventsConf { get; set; }
     }
-    public class HostSite
+    public partial class SiteHost : Record
     {
         public string Host
         {
@@ -240,6 +248,12 @@ namespace UMC.Proxy.Entities
         {
             get; set;
         }
+        public int? Scheme
+        {
+
+            get; set;
+        }
     }
+
 
 }
